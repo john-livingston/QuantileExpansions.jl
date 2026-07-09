@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Fetched upstream reference (see ref/README.md + ref/fetch.sh) — not vendored.
+# Track only the fetch script and the credit README.
+ref/*
+!ref/fetch.sh
+!ref/README.md
+
+# Compiled C benchmark binary
+bench_c
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/docs/build/
