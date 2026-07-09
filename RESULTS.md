@@ -17,13 +17,19 @@ Identical 328-point delta-constrained grid (the paper's `build_grid`), tiled
 
 | Implementation              | Serial ns/IV | Threaded ns/IV | max abs err |
 |-----------------------------|-------------:|---------------:|------------:|
-| **Julia (this repo)**       |     **77.3** | **9.7** (14t)  |     ~1e-14  |
+| **Julia (this repo)**       |     **69.1** | **8.2** (10t)  |    4.6e-14  |
 | C reference (same Mac)      |        113.7 |              — |    8.5e-14  |
 | Numba (spec, other HW)      |          134 |       24 (12t) |     ~1e-14  |
 
-**1.47× faster than C single-threaded, ~6× better max error; 2.5× faster than
-Numba's parallel number.** (C/Numba spec numbers were 87–125 ns on other HW;
-on this Mac the same C source runs 113.7 ns.)
+**1.65× faster than C single-threaded; 2.9× faster than Numba's parallel
+number.** (C/Numba spec numbers were 87–125 ns on other HW; on this Mac the same
+C source runs 113.7 ns.)
+
+Two BS entry points trade speed against accuracy. `bs_implied_vol_generic` (the
+one benchmarked above) tests `|f| < tol` *before* updating, so it stops one
+update early: **4.6e-14**, 1.9× better than C. `bs_implied_vol` updates then
+tests, spending one extra step to reach **1.3e-15** — 64× better than C — at a
+few ns more. Both are far inside any practical tolerance.
 
 ## All four distributions through ONE generic solver
 
@@ -32,7 +38,7 @@ Each converges to a forward residual `|F(x)−p| ≈ 1e-13`; speed vs Julia's
 
 | Target            | per-quantile | reference   | speedup | mean iters |
 |-------------------|-------------:|------------:|--------:|-----------:|
-| Black–Scholes IV  |     77.3 ns  | C: 113.7 ns | 1.47×   | 2.84       |
+| Black–Scholes IV  |     69.1 ns  | C: 113.7 ns | 1.65×   | 2.84       |
 | Inverse Gaussian  |     76.2 ns  | 574.9 ns    | 7.55×   | 3.36       |
 | Gamma             |    174.3 ns  | 269.7 ns    | 1.55×   | 2.57       |
 | Beta              |    461.5 ns  | 821.1 ns    | 1.78×   | 2.94       |
@@ -54,6 +60,9 @@ polish needs ~2.5–3 evals where bracketing libraries need more.)
   price tolerance) and **`normcdf_pdf`** returning Φ(d1) and φ(d1) from one
   `exp(-d1²/2)` (erfc's internal gaussian factor *is* φ/a1).
 - **`exp(κ)` hoisted** out of the BS HH-4 loop.
+- **Second `exp` eliminated** via the exact identity `exp(-d₂²/2) = exp(-d₁²/2)·e^{-κ}`
+  (since `d₂=d₁-v` and `d₁v - v²/2 = -κ`): the gaussian factor for `d₂` is free
+  once `d₁`'s is known, so each HH-4 iteration costs one `exp`, not two.
 - **IG overflow-safe form:** `e^{2λ/μ}Φ(β) = ½ erfcx(w)·G` with `G≤1`, and
   `erfcx` (scaled erfc) avoids an exp entirely on its mid/large ranges; `G` is
   reused as the density's exponential factor.

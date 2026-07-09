@@ -18,8 +18,8 @@ standard C/Rmath algorithms), and vs the paper authors' own C kernel for BS-IV
 
 | Target            | this repo    | reference            | speedup | accuracy          |
 |-------------------|-------------:|----------------------|--------:|-------------------|
-| Black–Scholes IV  |   ~79 ns/IV  | C kernel: ~110 ns/IV | **1.4×**| max \|Δv\| ~1e-15 |
-| BS-IV (threaded)  |  ~9.5 ns/IV  | Numba: 24 ns (12t)   | 2.5×    | —                 |
+| Black–Scholes IV  |   ~69 ns/IV  | C kernel: ~110 ns/IV | **1.6×**| max \|Δv\| ~1e-14 |
+| BS-IV (threaded)  |  ~8.2 ns/IV  | Numba: 24 ns (12t)   | 2.9×    | —                 |
 | Inverse Gaussian  |   ~76 ns/q   | Distributions: ~600  | **7.6×**| \|F(x)−p\| ~1e-13 |
 | Gamma             |  ~185 ns/q   | Distributions: ~285  | 1.5×    | \|F(x)−p\| ~1e-13 |
 | Beta              |  ~470 ns/q   | Distributions: ~820  | 1.8×    | \|F(x)−p\| ~1e-13 |

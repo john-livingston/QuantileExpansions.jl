@@ -114,12 +114,17 @@ end
 # --- HH-4 polish step (Householder order 3 / quartic) ------------------------
 # f = c_BS - cstar,  f' = φ(d1),  φ2 = f''/f' = d1 d2 / v,
 # ξ = f'''/f' = ((d1 d2)² - (d1²+d2²) - d1 d2)/v².
-@inline function hh4_step(κ::Float64, cstar::Float64, v::Float64, E::Float64)
+#
+# Exact identity, exploited below to save one `exp` per iteration:
+#   d2 = d1 - v  and  d1·v - v²/2 = -κ   ⇒   exp(-d2²/2) = exp(-d1²/2)·e^{-κ}
+# so the gaussian factor for d2 is free once we have the one for d1.
+@inline function hh4_step(κ::Float64, cstar::Float64, v::Float64, E::Float64, invE::Float64)
     invv = 1.0 / v
     d1 = -κ * invv + 0.5 * v
     d2 = d1 - v
     Φ1, fp = normcdf_pdf(d1)        # Φ(d1) and φ(d1) share one exp
-    f = Φ1 - E * normcdf(d2) - cstar
+    g2 = fp * SQRT2PI * invE        # = exp(-d2²/2), no second exp
+    f = Φ1 - E * normcdf_withg(d2, g2) - cstar
     r = f / fp
     d1d2 = d1 * d2
     φ2 = d1d2 * invv
@@ -136,6 +141,7 @@ end
 struct BSCall <: QuantileProblem
     κ::Float64
     E::Float64       # e^{|k|}
+    invE::Float64    # e^{-|k|}
 end
 @inline xlo(::BSCall) = 1e-10
 @inline xhi(::BSCall) = 5.0
@@ -146,7 +152,8 @@ end
     d1 = -κ * invv + 0.5 * v
     d2 = d1 - v
     Φ1, fp = normcdf_pdf(d1)
-    f = Φ1 - E * normcdf(d2) - cstar
+    g2 = fp * SQRT2PI * D.invE      # = exp(-d2²/2), no second exp
+    f = Φ1 - E * normcdf_withg(d2, g2) - cstar
     d1d2 = d1 * d2
     φ2 = d1d2 * invv
     ξ = (d1d2 * d1d2 - (d1 * d1 + d2 * d2) - d1d2) * invv * invv
@@ -157,12 +164,12 @@ end
 @inline function bs_implied_vol_generic(k::Float64, c::Float64; tol::Float64 = 1e-14)
     κ = abs(k); ek = exp(k)
     if k >= 0.0
-        cstar = c; E = ek
+        cstar = c; E = ek; invE = 1.0 / ek
     else
         invek = 1.0 / ek
-        cstar = invek * (c - 1.0 + ek); E = invek
+        cstar = invek * (c - 1.0 + ek); E = invek; invE = ek
     end
-    return solve(BSCall(κ, E), cstar; tol = tol)
+    return solve(BSCall(κ, E, invE), cstar; tol = tol)
 end
 
 @inline function bs_implied_vol(k::Float64, c::Float64; tol::Float64 = 1e-14, maxiter::Int = 8)
@@ -172,14 +179,16 @@ end
     if k >= 0.0
         cstar = c
         E = ek
+        invE = 1.0 / ek
     else
         invek = 1.0 / ek
         cstar = invek * (c - 1.0 + ek)
         E = invek
+        invE = ek
     end
     v = bs_seed(κ, cstar, E)
     @inbounds for _ in 1:maxiter
-        v, af = hh4_step(κ, cstar, v, E)
+        v, af = hh4_step(κ, cstar, v, E, invE)
         af < tol && break
     end
     return v

@@ -120,6 +120,48 @@ end
     end
 end
 
+# Φ(x) when g = exp(-x²/2) is already known. The Cody rational factors
+# erfc = R(y)·e^{-y²} on the mid/large ranges, so supplying g removes the `exp`
+# there entirely; the small branch uses the erf rational and needs no exp anyway.
+# CALLER MUST GUARANTEE  g == exp(-x²/2).
+@inline function normcdf_withg(x::Float64, g::Float64)
+    xe = -x * INV_SQRT2
+    y = abs(xe)
+    if y <= 0.46875
+        z = y * y
+        num = _ERF_P[5] * z
+        den = z
+        @inbounds for i in 1:3
+            num = (num + _ERF_P[i]) * z
+            den = (den + _ERF_Q[i]) * z
+        end
+        r = xe * (num + _ERF_P[4]) / (den + _ERF_Q[4])
+        return 0.5 * (1.0 - r)
+    elseif y <= 4.0
+        num = _ERFC_P[9] * y
+        den = y
+        @inbounds for i in 1:7
+            num = (num + _ERFC_P[i]) * y
+            den = (den + _ERFC_Q[i]) * y
+        end
+        R = (num + _ERFC_P[8]) / (den + _ERFC_Q[8])
+        ec = R * g
+        return xe < 0 ? 0.5 * (2.0 - ec) : 0.5 * ec
+    else
+        z = 1.0 / (y * y)
+        num = _ERFC_R[6] * z
+        den = z
+        @inbounds for i in 1:4
+            num = (num + _ERFC_R[i]) * z
+            den = (den + _ERFC_S[i]) * z
+        end
+        R = z * (num + _ERFC_R[5]) / (den + _ERFC_S[5])
+        R = (0.5641895835477563 - R) / y
+        ec = R * g
+        return xe < 0 ? 0.5 * (2.0 - ec) : 0.5 * ec
+    end
+end
+
 # Scaled complementary error function erfcx(x) = e^{x²} erfc(x), for x ≥ 0.
 # Cheaper than erfc on the mid/large ranges: the Cody rational already factors
 # erfc = R(y)·e^{-y²}, so erfcx = R(y) with no exp at all.

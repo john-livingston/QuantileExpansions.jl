@@ -21,7 +21,7 @@ include("dists/beta.jl")
 # generic interface
 export QuantileProblem, solve, seed, hh_terms
 # special functions
-export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
+export normcdf, normpdf, norminv, normcdf_pdf, normcdf_withg, erfc_hi, erfcx_pos
 # Black–Scholes
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_price
 # other distributions
