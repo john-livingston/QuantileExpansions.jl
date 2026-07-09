@@ -24,7 +24,7 @@ Normalized, undiscounted call price (forward measure): $$c_{BS}(k,v) = \Phi(d_1)
 
 ### 2.1 Seeds
 
-**ATM (Taylor inversion), $|k|<\kappa_1$.** Time value $c_{tv}=c-\max(1-e^k,0)$. At $k=0$: $c_{tv}=2\Phi(v/2)-1=\operatorname{erf}(v/(2\sqrt2))$. With $s=\sqrt{2\pi},c_{tv}$, $$v = s\Big(1+\tfrac{s^2}{24}+\tfrac{7s^4}{1920}+\tfrac{127 s^6}{322560}\Big)+O(s^8).$$ First-order truncation $v_0=s$ is the Brenner–Subrahmanyam estimate. Use the 4th-order form.
+**ATM (Taylor inversion), $|k|<\kappa_1$.** Time value $c_{tv}=c-\max(1-e^k,0)$. At $k=0$: $c_{tv}=2\Phi(v/2)-1=\mathrm{erf}(v/(2\sqrt2))$. With $s=\sqrt{2\pi},c_{tv}$, $$v = s\Big(1+\tfrac{s^2}{24}+\tfrac{7s^4}{1920}+\tfrac{127 s^6}{322560}\Big)+O(s^8).$$ First-order truncation $v_0=s$ is the Brenner–Subrahmanyam estimate. Use the 4th-order form.
 
 **Mild-OTM (polynomial-CDF seed).** Approximate $\Phi$ by an odd polynomial $P_{2m+1}$. $P_1(x)=\tfrac12+a_1 x$ → quadratic in $v$ → closed form. With $\varphi=k+\tfrac{k^2}{2}+\tfrac{k^3}{6}+\tfrac{k^4}{24}$ (4th-order $e^k$) and observed $c$: $$v_{P1}=\frac{2c+\varphi+\sqrt{N}}{2a_1(2+\varphi)},\qquad N=(2c+\varphi)^2-8a_1^2,k,\varphi,(2+\varphi).$$ Fallback if $N\le0$: drop $\sqrt N$ (clip discriminant to zero). Higher orders are **one Newton step** on the $P_3$/$P_7$ price surrogates, in closed form: $$v_{P3}=v_{P1}\Big(1+\tfrac{G_3(w)}{D_3(w)}\Big),\quad v_{P7}=v_{P1}\Big(1+\tfrac{G_7(w)}{D_7(w)}\Big),\quad w=v_{P1}.$$ $G_3,D_3$ share 4 of 5 terms; $G_7,D_7$ share a polynomial $Q_7$ (compute once). Full $G,D$ expressions are in the paper's Appendix 8.3–8.4 (port verbatim when needed).
 
