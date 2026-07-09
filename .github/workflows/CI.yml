@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: julia ${{ matrix.julia-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['1.10', '1.12']
+        os: [ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+
+      - uses: julia-actions/cache@v2
+
+      # This project is an application (no name/uuid in Project.toml), so we
+      # instantiate + run the test script directly rather than using Pkg.test().
+      # The committed Manifest.toml was resolved on 1.12; fall back to a fresh
+      # resolve if it is incompatible with an older Julia.
+      - name: Instantiate
+        run: |
+          julia --project=. -e '
+            using Pkg
+            try
+                Pkg.instantiate()
+            catch err
+                @warn "instantiate from Manifest failed; resolving fresh" err
+                rm("Manifest.toml"; force=true)
+                Pkg.instantiate()
+            end'
+
+      - name: Run tests
+        run: julia --project=. test/runtests.jl
