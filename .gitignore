@@ -16,3 +16,4 @@ bench_c
 *.jl.mem
 /docs/build/
 .claude/
+site/
