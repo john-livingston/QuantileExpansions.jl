@@ -269,6 +269,19 @@ Still unported from his beta engine: the ODE5 central seed (per-(a,b)
 z-polynomials) and the zero-evaluation y6 seed-intrinsic certificate — together
 those are his 18–22 ns central tier — and the endpoint power-series I_x.
 
+## Implied-vol sensitivities (`bs_implied_vol_grad`)
+
+The spec's "AD through the solver" idea, resolved the right way: the implicit
+function theorem differentiates the fixed point C_BS(k, v(k,c)) = c directly,
+giving exact first-order sensitivities for one extra Φ/φ evaluation after the
+solve — no dual numbers through the polish loop:
+
+    dv/dc = 1/vega = 1/φ(d1)          dv/dk = e^k·Φ(d2)/φ(d1)
+
+Validated against central finite differences of the solver itself to ~3e-9
+(the FD truncation floor; the IFT values are exact to solver precision). The
+fixed point is differentiable wherever vega > 0, i.e. the whole solver domain.
+
 ## Seed admissibility — a negative result
 
 Two HH-4 steps reach `ε` from relative seed error `δ` iff `δ ≤ δ* = ε^(1/16)`

@@ -219,3 +219,29 @@ end
     end
     return v
 end
+
+# --- implied-vol sensitivities via the implicit function theorem --------------
+# v(k, c) is defined by C_BS(k, v) = c. Differentiating the fixed point:
+#   ∂v/∂c = 1 / vega,          vega = ∂C/∂v = φ(d1)
+#   ∂v/∂k = -(∂C/∂k) / vega = e^k Φ(d2) / φ(d1)
+# (∂C/∂k = -e^k Φ(d2), using the identity φ(d1) = e^k φ(d2)). Exact to solver
+# precision wherever vega > 0 — i.e. the whole solver domain — and supersedes
+# AD through the iteration: the IFT differentiates the fixed point itself, so
+# no dual numbers pass through the polish loop.
+"""
+    bs_implied_vol_grad(k, c) -> (v, ∂v/∂c, ∂v/∂k)
+
+Implied total volatility and its exact first-order sensitivities to price and
+log-moneyness, via the implicit function theorem.
+"""
+@inline function bs_implied_vol_grad(k::Float64, c::Float64; tol::Float64 = 1e-14)
+    v = bs_implied_vol(k, c; tol = tol)
+    invv = 1.0 / v
+    d1 = -k * invv + 0.5 * v            # signed k
+    d2 = d1 - v
+    Φ2, _ = normcdf_pdf(d2)
+    vega = normpdf(d1)
+    dvdc = 1.0 / vega
+    dvdk = exp(k) * Φ2 * dvdc
+    return v, dvdc, dvdk
+end

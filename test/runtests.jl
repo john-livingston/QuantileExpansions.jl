@@ -182,6 +182,21 @@ end
     @test (@allocated ig_quantile_batch!(out, 1.0, 3.0, ps, Val(3), Val(8))) == 0
 end
 
+@testset "IFT implied-vol sensitivities" begin
+    for v in (0.1, 0.5, 1.5), D in (0.2, 0.5, 0.8)
+        k = v*(0.5v - sqrt(2)*erfinv(2D-1))
+        d1 = -k/v+0.5v; d2 = d1-v
+        c = normcdf(d1) - exp(k)*normcdf(d2)
+        vs, dvdc, dvdk = bs_implied_vol_grad(k, c)
+        @test vs ≈ v atol=1e-12
+        hc = 1e-6*c
+        @test dvdc ≈ (bs_implied_vol(k,c+hc)-bs_implied_vol(k,c-hc))/(2hc) rtol=1e-6
+        hk = 1e-6*max(abs(k),0.1)
+        @test dvdk ≈ (bs_implied_vol(k+hk,c)-bs_implied_vol(k-hk,c))/(2hk) rtol=1e-6
+    end
+    @test (@allocated bs_implied_vol_grad(0.1, 0.06)) == 0
+end
+
 @testset "allocation-free scalar solvers" begin
     @test (@allocated bs_implied_vol(0.1, 0.06)) == 0
     @test (@allocated ig_quantile(1.0, 3.0, 0.7)) == 0
