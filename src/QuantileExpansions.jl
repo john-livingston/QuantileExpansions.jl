@@ -28,9 +28,9 @@ export QuantileProblem, solve, solve_certified, seed, hh_terms
 # special functions
 export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 # Black–Scholes
-export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_implied_vol_grad, bs_price
-export bs_implied_vol_fixed_batch!, BSFixedWorkspace, vexp, vlog
+export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_cert, bs_implied_vol_fixed, bs_implied_vol_grad, bs_price
+export bs_implied_vol_fixed_batch!, bs_implied_vol_fixed_batch_threaded!, BSFixedWorkspace, vexp, vlog
 # other distributions
-export IGQ, ig_quantile, ig_quantile_batch!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert
+export IGQ, ig_quantile, ig_quantile_cert, ig_quantile_batch!, ig_quantile_batch_threaded!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, gamma_quantile_batch!, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert, beta_quantile_batch!
 
 end # module

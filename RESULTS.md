@@ -269,6 +269,39 @@ Still unported from his beta engine: the ODE5 central seed (per-(a,b)
 z-polynomials) and the zero-evaluation y6 seed-intrinsic certificate — together
 those are his 18–22 ns central tier — and the endpoint power-series I_x.
 
+## Threads × SIMD, amortized batches, and certificate coverage
+
+Three additions rounding out the performance surface (Apple M4, 10 threads):
+
+**Threads × SIMD** (`bs_implied_vol_fixed_batch_threaded!`,
+`ig_quantile_batch_threaded!`): the SIMD batch kernels over contiguous
+per-thread chunks (disjoint index ranges, so even the two-pass workspace is
+shared safely; threaded ≡ serial bit-for-bit).
+
+| kernel                     | 1 thread | 10 threads × W=8 | throughput |
+|----------------------------|---------:|-----------------:|-----------:|
+| BS fixed-2 (fast mode)     |  33.2 ns |      **3.64 ns** |   ~275 M/s |
+| BS fixed-3 (full 1.3e-15)  |  44.6 ns |      **4.81 ns** |   ~208 M/s |
+| IG fixed-3 (machine-exact) |  37.2 ns |      **4.35 ns** |   ~230 M/s |
+
+**Amortized batch APIs** (`gamma_quantile_batch!`, `beta_quantile_batch!`):
+construct the problem struct once per shape (lnΓ / logbeta / CF5 cumulants /
+c5 boundary) and reuse across the probability vector — the reference engines'
+batch protocol. Bit-for-bit identical to the per-call solvers; gamma a=5:
+88.6 → 82.7 ns, beta (20,12.5): 337.5 → 302.7 ns (7–10%).
+
+**K4 certificates for IG and BS** (`ig_quantile_cert`, `bs_implied_vol_cert`):
+the `hh4_c4` ratios (IG: L‴+3L′L″+L′³ with L‴ = (−3+3λ/x)/x³; BS:
+(s³−3s(q+s)+3(q+2s))/v³, s = d₁d₂, q = d₁²+d₂²), FD-validated to ~7e-9. Honest
+result: **near-neutral speed** (BS 67.3 vs 67.4 ns; IG 61.3 vs 63.7). The
+certificate only fires where the seed is already superb — 48/328 BS grid
+points, essentially never for IG's quadratic seed at τ=1e-14 (it activates in
+the near-Gaussian λ/μ ≳ 100 regime). Certificates pay where seeds are
+CF5-grade (gamma central: 1.43×); coverage here completes the interface, not
+the speedup. One documented edge: on extreme IG stress points the certified
+and full paths can differ at the last-3-ulps level (both correct; the full
+path's residual-based stop takes one extra ulp-level step).
+
 ## Implied-vol sensitivities (`bs_implied_vol_grad`)
 
 The spec's "AD through the solver" idea, resolved the right way: the implicit

@@ -182,6 +182,26 @@ end
     return v
 end
 
+# f''''/f' in v space: with s = d1·d2, q = d1²+d2² (∂d1/∂v = -d2/v, ∂d2/∂v = -d1/v),
+#   s' = -q/v,  q' = -4s/v,  ξ = (s² - q - s)/v²  ⇒  ξ' = (-2s(q+s) + 3(q+2s))/v³
+# f''''/f' = ξ' + ξ·φ2 = (s³ - 3s(q+s) + 3(q+2s))/v³   (enables the K4 certificate)
+@inline has_c4(::BSCall) = true
+@inline function hh4_c4(D::BSCall, v::Float64)
+    invv = 1.0 / v
+    d1 = -D.κ * invv + 0.5 * v
+    d2 = d1 - v
+    s = d1 * d2
+    q = d1 * d1 + d2 * d2
+    return (s * (s * s - 3.0 * (s + q)) + 3.0 * (q + 2.0 * s)) * invv * invv * invv
+end
+
+"Certified variant of [`bs_implied_vol_generic`]: skips the confirmation price
+evaluation when the K4 error model certifies the first HH-4 update below τ."
+@inline function bs_implied_vol_cert(k::Float64, c::Float64; tol::Float64 = 1e-14)
+    κ, cstar, E, invE = _otm_reduce(k, c)
+    return solve_certified(BSCall(κ, E, invE), cstar; tol = tol)
+end
+
 # --- branch-free fixed-step kernel -------------------------------------------
 # Runs exactly N HH-4 updates with no residual test, so every input follows the
 # same instruction path: no iteration-count divergence. That uniformity is the

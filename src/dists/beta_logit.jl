@@ -151,3 +151,64 @@ evaluation when the K4 error model certifies the first HH-4 update below τ."
         return 1.0 - ey / (1.0 + ey)
     end
 end
+
+"""
+    beta_quantile_batch!(out, a, b, ps; tol=1e-14, certified=true)
+
+Amortized batch of [`beta_quantile_logit`] / [`beta_quantile_logit_cert`]:
+`BetaLogitQ(a,b)` AND its mirror `BetaLogitQ(b,a)` (needed for p > ½) are
+constructed ONCE per shape pair — logbeta + the CF5 cumulants — and reused
+across `ps`, like the reference C engines amortize per-(a,b) setup.
+Bit-identical to the per-call scalar functions; allocation-free given a
+preallocated `out`.
+"""
+function beta_quantile_batch!(out::Vector{Float64}, a::Float64, b::Float64, ps::Vector{Float64};
+                              tol::Float64 = 1e-14, certified::Bool = true)
+    length(out) == length(ps) || throw(DimensionMismatch("out and ps must have equal length"))
+    # exact closed-form shapes: (a,b)-checks hoisted out of the loop
+    if b == 1.0
+        @inbounds for i in eachindex(ps)
+            p = ps[i]
+            out[i] = p <= 0.0 ? 0.0 : (p >= 1.0 ? 1.0 : p^(1.0 / a))
+        end
+        return out
+    elseif a == 1.0
+        @inbounds for i in eachindex(ps)
+            p = ps[i]
+            out[i] = p <= 0.0 ? 0.0 : (p >= 1.0 ? 1.0 : -expm1(log1p(-p) / b))
+        end
+        return out
+    elseif a == 0.5 && b == 0.5
+        @inbounds for i in eachindex(ps)
+            p = ps[i]
+            if p <= 0.0
+                out[i] = 0.0
+            elseif p >= 1.0
+                out[i] = 1.0
+            else
+                s = sinpi(0.5 * p)
+                out[i] = s * s
+            end
+        end
+        return out
+    end
+    Dab = BetaLogitQ(a, b)             # amortized: constructed once per (a,b)
+    Dba = BetaLogitQ(b, a)             # mirrored problem for p > ½
+    @inbounds for i in eachindex(ps)
+        p = ps[i]
+        if p <= 0.0
+            out[i] = 0.0
+        elseif p >= 1.0
+            out[i] = 1.0
+        elseif p <= 0.5
+            y = certified ? solve_certified(Dab, p; tol = tol) : solve(Dab, p; tol = tol)
+            out[i] = 1.0 / (1.0 + exp(-y))
+        else
+            y = certified ? solve_certified(Dba, 1.0 - p; tol = tol) : solve(Dba, 1.0 - p; tol = tol)
+            # 1 - σ(y), computed as in beta_quantile_logit for last-ulp stability
+            ey = exp(y)
+            out[i] = 1.0 - ey / (1.0 + ey)
+        end
+    end
+    return out
+end

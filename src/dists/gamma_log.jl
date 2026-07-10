@@ -181,3 +181,51 @@ evaluation when the K4 error model certifies the first HH-4 update below τ."
     end
     return exp(solve_certified(GammaLogQ(a), u; tol = tol))
 end
+
+"""
+    gamma_quantile_batch!(out, a, us; tol=1e-14, certified=true)
+
+Amortized batch of [`gamma_quantile_log`] / [`gamma_quantile_log_cert`]: the
+`GammaLogQ(a)` setup (lnΓ terms + c5 dynamic boundary) is done ONCE per shape
+and reused across `us`, like the reference C engines amortize per-`a` setup.
+Bit-identical to the per-call scalar functions; allocation-free given a
+preallocated `out`.
+"""
+function gamma_quantile_batch!(out::Vector{Float64}, a::Float64, us::Vector{Float64};
+                               tol::Float64 = 1e-14, certified::Bool = true)
+    length(out) == length(us) || throw(DimensionMismatch("out and us must have equal length"))
+    # exact closed-form shapes: a-check hoisted out of the loop
+    if a == 1.0
+        @inbounds for i in eachindex(us)
+            u = us[i]
+            out[i] = u <= 0.0 ? 0.0 : (u >= 1.0 ? Inf : -log1p(-u))
+        end
+        return out
+    elseif a == 0.5
+        @inbounds for i in eachindex(us)
+            u = us[i]
+            if u <= 0.0
+                out[i] = 0.0
+            elseif u >= 1.0
+                out[i] = Inf
+            else
+                z = norminv(0.5 * (1.0 + u))
+                out[i] = 0.5 * z * z
+            end
+        end
+        return out
+    end
+    D = GammaLogQ(a)                   # amortized: constructed once per shape
+    if certified
+        @inbounds for i in eachindex(us)
+            u = us[i]
+            out[i] = u <= 0.0 ? 0.0 : (u >= 1.0 ? Inf : exp(solve_certified(D, u; tol = tol)))
+        end
+    else
+        @inbounds for i in eachindex(us)
+            u = us[i]
+            out[i] = u <= 0.0 ? 0.0 : (u >= 1.0 ? Inf : exp(solve(D, u; tol = tol)))
+        end
+    end
+    return out
+end

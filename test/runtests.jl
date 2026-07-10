@@ -138,6 +138,28 @@ end
     @test (@allocated beta_quantile_logit(2.0, 5.0, 0.4)) == 0
 end
 
+@testset "amortized gamma/beta batches" begin
+    # grid incl. deep tails; batch must be bit-for-bit == per-call scalars
+    ps = [1e-12, 1e-8, 1e-4, 0.01, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99, 1-1e-4, 1-1e-8, 1-1e-12]
+    out = similar(ps)
+    # gamma: incl. exact-branch shapes a=1, a=1/2
+    for a in (0.5, 1.0, 0.75, 2.0, 5.0, 50.0, 100.0)
+        gamma_quantile_batch!(out, a, ps)
+        @test all(out[i] === gamma_quantile_log_cert(a, ps[i]) for i in eachindex(ps))
+        gamma_quantile_batch!(out, a, ps; certified=false)
+        @test all(out[i] === gamma_quantile_log(a, ps[i]) for i in eachindex(ps))
+    end
+    # beta: incl. exact-branch shapes b=1, a=1, (1/2,1/2); grid spans both symmetry sides
+    for (a,b) in ((100.0,1.0), (1.0,3.0), (0.5,0.5), (0.75,2.0), (2.0,5.0), (5.0,0.2), (20.0,12.5))
+        beta_quantile_batch!(out, a, b, ps)
+        @test all(out[i] === beta_quantile_logit_cert(a, b, ps[i]) for i in eachindex(ps))
+        beta_quantile_batch!(out, a, b, ps; certified=false)
+        @test all(out[i] === beta_quantile_logit(a, b, ps[i]) for i in eachindex(ps))
+    end
+    @test (@allocated gamma_quantile_batch!(out, 5.0, ps)) == 0
+    @test (@allocated beta_quantile_batch!(out, 2.0, 5.0, ps)) == 0
+end
+
 @testset "Beta vs Distributions (forward residual)" begin
     mf = 0.0
     for a in [0.5,1.0,2.0,5.0,20.0], b in [0.5,1.0,2.0,5.0,20.0], p in [1e-3,0.01,0.1,0.5,0.9,0.99,0.999]
@@ -158,6 +180,20 @@ end
     end
     @test (@allocated gamma_quantile_log_cert(5.0, 0.3)) == 0
     @test (@allocated beta_quantile_logit_cert(2.0, 5.0, 0.4)) == 0
+end
+
+@testset "K4 certificates IG/BS" begin
+    # same contract as the gamma/beta certificates: certified variants must be
+    # bit-for-bit identical to the full solvers (the certificate may only skip
+    # provably-converged confirmation evaluations)
+    for (μ,λ) in [(1.0,0.5),(1.0,3.0),(1.0,50.0),(2.0,1.0),(3.0,0.3)], p in [1e-4,0.01,0.1,0.5,0.9,0.99,1-1e-4]
+        @test ig_quantile_cert(μ, λ, p) == ig_quantile(μ, λ, p)
+    end
+    for (k, c, _) in paper_grid()
+        @test bs_implied_vol_cert(k, c) == bs_implied_vol_generic(k, c)
+    end
+    @test (@allocated ig_quantile_cert(1.0, 3.0, 0.7)) == 0
+    @test (@allocated bs_implied_vol_cert(0.1, 0.06)) == 0
 end
 
 @testset "Inverse Gaussian vs Distributions" begin
@@ -195,6 +231,22 @@ end
         @test dvdk ≈ (bs_implied_vol(k+hk,c)-bs_implied_vol(k-hk,c))/(2hk) rtol=1e-6
     end
     @test (@allocated bs_implied_vol_grad(0.1, 0.06)) == 0
+end
+
+@testset "threaded SIMD batches match serial" begin
+    pts = paper_grid()
+    ks = [p[1] for p in pts]; cs = [p[2] for p in pts]
+    o1 = similar(ks); o2 = similar(ks)
+    for vseed in (true, false)
+        bs_implied_vol_fixed_batch!(o1, ks, cs, Val(3), Val(4); vector_seed=vseed)
+        bs_implied_vol_fixed_batch_threaded!(o2, ks, cs, Val(3), Val(4); vector_seed=vseed)
+        @test o1 == o2
+    end
+    ps = collect(range(0.001, 0.999, length=333))
+    q1 = similar(ps); q2 = similar(ps)
+    ig_quantile_batch!(q1, 1.0, 3.0, ps, Val(3), Val(4))
+    ig_quantile_batch_threaded!(q2, 1.0, 3.0, ps, Val(3), Val(4))
+    @test q1 == q2
 end
 
 @testset "allocation-free scalar solvers" begin

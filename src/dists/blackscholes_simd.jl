@@ -186,3 +186,68 @@ function bs_implied_vol_fixed_batch!(out::Vector{Float64},
                                ws === nothing ? BSFixedWorkspace(n) : ws)
     end
 end
+
+"""
+    bs_implied_vol_fixed_batch_threaded!(out, ks, cs, ::Val{N}, ::Val{W};
+                                         vector_seed, ws)
+
+Threads × SIMD: the batch kernel over contiguous per-thread chunks. Threads
+write disjoint index ranges, so the two-pass workspace can be shared safely.
+"""
+function bs_implied_vol_fixed_batch_threaded!(out::Vector{Float64},
+                                              ks::Vector{Float64}, cs::Vector{Float64},
+                                              ::Val{N}, ::Val{W};
+                                              vector_seed::Bool = (Sys.ARCH === :x86_64),
+                                              ws::Union{Nothing,BSFixedWorkspace} = nothing) where {N,W}
+    n = length(ks)
+    @assert length(cs) == n && length(out) == n
+    wsr = vector_seed ? nothing : (ws === nothing ? BSFixedWorkspace(n) : ws)
+    nt = Threads.nthreads()
+    chunk = cld(n, nt)
+    Threads.@threads :static for t in 1:nt
+        lo = (t - 1) * chunk + 1
+        hi = min(t * chunk, n)
+        lo > hi && continue
+        if vector_seed
+            i = lo
+            @inbounds while i + W - 1 <= hi
+                k = vload(Vec{W,Float64}, ks, i)
+                c = vload(Vec{W,Float64}, cs, i)
+                vstore(_solve_lanes(k, c, Val(N)), out, i)
+                i += W
+            end
+            @inbounds while i <= hi
+                out[i] = _solve_lanes(ks[i], cs[i], Val(N))
+                i += 1
+            end
+        else
+            @inbounds for i in lo:hi
+                κ, cstar, E, invE = _otm_reduce(ks[i], cs[i])
+                wsr.κ[i] = κ; wsr.cstar[i] = cstar; wsr.E[i] = E; wsr.invE[i] = invE
+                out[i] = bs_seed(κ, cstar, E)
+            end
+            i = lo
+            @inbounds while i + W - 1 <= hi
+                v     = vload(Vec{W,Float64}, out, i)
+                κ     = vload(Vec{W,Float64}, wsr.κ, i)
+                cstar = vload(Vec{W,Float64}, wsr.cstar, i)
+                E     = vload(Vec{W,Float64}, wsr.E, i)
+                invE  = vload(Vec{W,Float64}, wsr.invE, i)
+                for _ in 1:N
+                    v = _hh4_update_bf(v, κ, cstar, E, invE)
+                end
+                vstore(v, out, i)
+                i += W
+            end
+            @inbounds while i <= hi
+                v = out[i]
+                for _ in 1:N
+                    v = _hh4_update_bf(v, wsr.κ[i], wsr.cstar[i], wsr.E[i], wsr.invE[i])
+                end
+                out[i] = v
+                i += 1
+            end
+        end
+    end
+    return out
+end

@@ -57,3 +57,22 @@ end
 end
 
 ig_quantile(μ::Float64, λ::Float64, p::Float64; tol::Float64 = 1e-13) = solve(IGQ(μ, λ), p; tol = tol)
+
+# f''''/f' in x space: with L = log ρ,
+#   L'''= -3/x³ + 3λ/x⁴
+# f''''/f' = L''' + 3L'L'' + L'³   (enables the K4 certificate)
+@inline has_c4(::IGQ) = true
+@inline function hh4_c4(D::IGQ, x::Float64)
+    λ = D.λ
+    invx = 1.0 / x
+    invx2 = invx * invx
+    Lp = -1.5 * invx - D.λ_2μ2 + 0.5 * λ * invx2
+    Lpp = 1.5 * invx2 - λ * invx2 * invx
+    Lppp = (-3.0 + 3.0 * λ * invx) * invx2 * invx
+    return Lppp + Lp * (3.0 * Lpp + Lp * Lp)
+end
+
+"Certified variant of [`ig_quantile`]: skips the confirmation CDF evaluation
+when the K4 error model certifies the first HH-4 update below τ."
+@inline ig_quantile_cert(μ::Float64, λ::Float64, p::Float64; tol::Float64 = 1e-13) =
+    solve_certified(IGQ(μ, λ), p; tol = tol)
