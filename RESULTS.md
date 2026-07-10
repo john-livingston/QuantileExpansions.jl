@@ -107,34 +107,48 @@ can actually be vectorized.
 ## SIMD batch kernel (`bs_implied_vol_fixed_batch!`)
 
 The fixed-step kernel's uniform instruction path enables explicit vectorization
-(SIMD.jl `Vec{W,Float64}`). Two passes: a scalar seed pass (regime branches stay
-scalar), then exactly N branch-free HH-4 updates on W lanes at once — blended
-3-branch Cody Φ (all ranges evaluated, lane-selected) and a branch-free `vexp`
-(Cody–Waite + degree-13 polynomial + exponent bit-trick, 1 ulp).
+(SIMD.jl `Vec{W,Float64}`), built on a branch-free `vexp` (Cody–Waite +
+degree-13 polynomial + exponent bit-trick, 1 ulp), a branch-free `vlog`, a
+blended 3-branch Cody Φ, and a blended 3-branch Acklam `norminv_bf` — the
+spec's "transcendental-free seed chain" idea realized as select-blended
+vector code.
 
-Measured on both ISAs (single thread, 1.64M-IV grid, best-of-N):
+Two seed strategies behind one API (the polish is vectorized in both):
+- **fused** (`vector_seed=true`): reduction, regime seed, and polish all W lanes
+  wide in one pass. The blended seed evaluates *all five* regime candidates
+  (incl. the deep/Mills seed's two `norminv_bf`) on every lane — ~3× the work
+  of the average scalar seed, paid for only when lanes are wide.
+- **two-pass** (`vector_seed=false`): scalar branchy seed staged through a
+  workspace, vectorized polish only.
 
-| host                       | scalar f2 | scalar f3 | batch W=8 f2 | batch W=8 f3 | polish speedup |
-|----------------------------|----------:|----------:|-------------:|-------------:|---------------:|
-| Apple Silicon (NEON 2-wide)|   51.9 ns |   79.2 ns |  **32.8 ns** |  **44.2 ns** | 2.07× / 2 lanes|
-| GitHub Zen4 (AVX-512)      |  120.9 ns |  167.8 ns |  **51.1 ns** |  **61.3 ns** | 4.5× / 8 lanes |
+Measured single-thread, 1.64M-IV grid, best width (W=8) on each host —
+within-run comparisons only (CI VMs vary between runs):
 
-(Zen4 "double-pumps" 512-bit ops as 2×256-bit, so ~4–5× is that core's real
-ceiling — the polish vectorizes at essentially full lane efficiency on both
-ISAs. The blend-everything overhead is fully paid for by eliminating branches.
-W=8 wins even on 2-wide NEON: four interleaved bundles hide instruction latency.)
+| host                        | scalar f2/f3 | two-pass f2/f3 | fused f2/f3   | winner  |
+|-----------------------------|-------------:|---------------:|--------------:|---------|
+| Apple Silicon (NEON 2-wide) | 51.6 / 78.7  | **33.2 / 44.6**| 41.1 / 51.9   | two-pass|
+| GitHub Zen3 (AVX2 4-wide)   | 138.5 / 191.4| 66.4 / 81.7    | **57.2 / 72.2**| fused  |
+| GitHub Zen4 (AVX-512)*      | 120.9 / 167.8| **51.1 / 61.3**| —             | (earlier run) |
 
-Two consequences:
-- **Full-precision fixed-3 batch is faster than scalar fast-mode fixed-2 on both
-  hosts** — on batches there is no longer a speed reason to give up accuracy.
-- **Amdahl has moved to the seed pass**: it costs 11.3 ns (NEON) / 30.9 ns (Zen4)
-  of the 44.2 / 61.3 ns totals — 26% / 50%. Vectorizing the seed (blending the
-  polynomial regimes, which are already arithmetic-only, with a scalar fallback
-  for the rare deep/tail lanes) is the next lever; it bounds a further ~1.3–1.9×.
+*The Zen4 row is an earlier run before the fused strategy existed; its two-pass
+polish vectorized 4.5× (that core's double-pump ceiling).
 
-Accuracy is identical to the scalar fixed kernel up to `vexp`-vs-`exp` rounding
-(≤1e-13 pointwise; same 2.9e-11 / 1.3e-15 grid figures) with the same validity
-domain (delta ∈ [0.05, 0.95]).
+The ISA asymmetry is exactly the blend-overhead story: on 2-wide NEON the
+vector seed's ~3× work blowup cannot be covered by 2 lanes (fused *loses*
+there); from ~8 effective lanes on x86 it wins (fixed-3: 81.7 → 72.2 ns on
+Zen3). The default is therefore `vector_seed = (Sys.ARCH === :x86_64)`.
+
+Consequences:
+- **Full-precision fixed-3 batch is faster than scalar fast-mode fixed-2 on
+  every host measured** — on batches there is no speed reason to give up
+  accuracy: 44.6 ns on NEON (2.5× the reference C), 2.65× the same-host scalar
+  on Zen3.
+- Accuracy is identical to the scalar fixed kernel up to `vexp`/`vlog`-vs-libm
+  rounding (≤1e-13 pointwise; same 2.9e-11 / 1.3e-15 grid figures), same
+  validity domain (delta ∈ [0.05, 0.95]).
+- Remaining levers: the mild-P7 seed improvement (would make 2-step batches
+  exact at 1e-14, cutting another ~30%), further divide reduction in the
+  blended Φ, and thread × SIMD composition.
 
 ## Seed admissibility — a negative result
 

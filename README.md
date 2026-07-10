@@ -32,10 +32,10 @@ with no error signal; use the adaptive solver for deep-OTM inputs. The 3-step
 variant holds 1.6e-15 across the whole band at ~79 ns.
 
 **SIMD batches** (`bs_implied_vol_fixed_batch!`, explicit `Vec{W}` over the
-branch-free kernel): full-precision 3-step drops to **~44 ns/IV** on 2-wide
-NEON and **2.7× the scalar speed** on AVX-512 (GitHub Zen4 runner) — the
-vectorized polish runs at ~full lane efficiency on both ISAs. See
-[`RESULTS.md`](RESULTS.md).
+branch-free kernel, with an ISA-adaptive seed strategy): full-precision 3-step
+drops to **~44 ns/IV** on 2-wide NEON and to **2.65× the same-host scalar
+speed** on x86 (GitHub Zen3/Zen4 runners), the polish vectorizing at ~full
+lane efficiency on both ISAs. See [`RESULTS.md`](RESULTS.md).
 | Inverse Gaussian  |   ~76 ns/q   | Distributions: ~600  | **7.6×**| \|F(x)−p\| ~1e-13 |
 | Gamma             |  ~185 ns/q   | Distributions: ~285  | 1.5×    | \|F(x)−p\| ~1e-13 |
 | Beta              |  ~470 ns/q   | Distributions: ~820  | 1.8×    | \|F(x)−p\| ~1e-13 |
