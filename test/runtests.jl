@@ -104,7 +104,7 @@ end
     @test mf < 1e-12
 end
 
-@testset "Gamma log-space solver (Alper port)" begin
+@testset "Gamma log-space solver (Hekimoglu port)" begin
     # exact branches
     @test gamma_quantile_log(1.0, 0.3) ≈ -log1p(-0.3) rtol=1e-15
     @test gamma_quantile_log(0.5, 0.7) ≈ Distributions.quantile(Distributions.Gamma(0.5,1.0), 0.7) rtol=1e-8
@@ -117,6 +117,25 @@ end
     end
     @test ml < 1e-9
     @test (@allocated gamma_quantile_log(5.0, 0.3)) == 0
+end
+
+@testset "Beta logit-space solver" begin
+    # exact closed-form branches
+    @test beta_quantile_logit(100.0, 1.0, 1e-8) ≈ (1e-8)^(1/100) rtol=1e-15
+    @test beta_quantile_logit(1.0, 3.0, 0.2) ≈ -expm1(log1p(-0.2)/3) rtol=1e-15
+    @test beta_quantile_logit(0.5, 0.5, 0.3) ≈ sinpi(0.15)^2 rtol=1e-15
+    # logit-metric accuracy incl. the skewed corners where x-space degrades
+    ml = 0.0
+    for (a,b) in ((0.75,2.0),(2.0,5.0),(5.0,0.2),(20.0,12.5),(100.0,100.0)),
+        u in [1e-8,1e-4,0.01,0.3,0.5,0.9,0.999,1-1e-6]
+        xr = Distributions.quantile(Distributions.Beta(a,b), u)
+        (xr<=0 || xr>=1) && continue
+        xl = beta_quantile_logit(a,b,u)
+        (xl<=0 || xl>=1) && continue
+        ml = max(ml, abs((log(xl)-log1p(-xl)) - (log(xr)-log1p(-xr))))
+    end
+    @test ml < 1e-9
+    @test (@allocated beta_quantile_logit(2.0, 5.0, 0.4)) == 0
 end
 
 @testset "Beta vs Distributions (forward residual)" begin

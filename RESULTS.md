@@ -150,7 +150,7 @@ Consequences:
   exact at 1e-14, cutting another ~30%), further divide reduction in the
   blended Φ, and thread × SIMD composition.
 
-## Gamma in log space (`gamma_quantile_log`) — port of Alper's engine
+## Gamma in log space (`gamma_quantile_log`) — port of A. Hekimoglu's engine
 
 Port of the collaborator's C engine (`gamma_quant_full_c5_dynamic_boundary_
 widesafe_engine.c`, "full" mode) into the generic solver: the unknown becomes
@@ -191,6 +191,40 @@ as the x-space baseline. Port caveats: the Mills seed needed an explicit
 validity gate (yt > 2·max(a−1,1)) his dispatch achieves differently, and the
 a=½ exact branch inherits Acklam-norminv accuracy (~1e-8 deep-tail log error)
 exactly as his engine does.
+
+## Beta in logit space (`beta_quantile_logit`)
+
+The same coordinate-change treatment applied to beta, from the collaborator's
+beta engine: unknown y = logit(x), so x stays in (0,1) intrinsically, x and 1−x
+are both computed stably from y at either endpoint, and the HH-4 ratios are
+polynomials (F''/F' = a−(a+b)x, F'''/F' = (a−(a+b)x)² − (a+b)x(1−x)). Reuses
+the existing x-space regime seeds mapped through logit, plus his exact
+closed-form branches (b=1 ⇒ x=p^{1/a}, a=1, and the (½,½) arcsine law) — the
+generic seeds are arbitrarily bad in exactly those corners. Density-scaled
+convergence as for gamma.
+
+| (a,b)      | x-space ns | logit ns | Distr. ns | x-space maxerr | logit maxerr |
+|------------|-----------:|---------:|----------:|---------------:|-------------:|
+| (0.5,0.5)  |      239.5 |  **3.3** |     439.0 |        4.6e-13 | 7.5e-10*     |
+| (0.75,2)   |      617.8 |    675.5 |    1315.4 |        1.8e-10 | 1.9e-14      |
+| (2,5)      |      302.6 |    381.6 |     537.7 |        2.0e-12 | 2.0e-14      |
+| (5,0.2)    |      674.0 |    664.0 |    1276.6 |    **1.3e-06** | 4.3e-14      |
+| (20,12.5)  |      421.1 |    515.6 |     924.7 |        2.0e-07 | 2.0e-14      |
+| (100,100)  |      417.7 |    504.8 |     680.3 |        1.2e-12 | 1.9e-14      |
+
+(accuracy = max |Δ logit x| vs Distributions on u ∈ [1e-8, 1−1e-8]; *the
+(½,½) figure is the Float64 representation limit of x near 1, not solver error)
+
+Same verdict as gamma: **the logit formulation holds ~2e-14 uniformly** where
+the x-space solver degrades to ~1e-6 in skewed corners; its modest bulk-speed
+cost is the density-scaled stop demanding true convergence (x-space's apparent
+speed there comes from stopping early, wrong). Both beat Distributions ~1.7–2×.
+`beta_quantile_logit` is the recommended beta path.
+
+Not yet ported from his beta engine (candidates for later): the ODE5 central
+seed with per-(a,b) precomputed z-polynomials, the y6/K4 acceptance
+certificates (skip-polish-when-certified — the source of his 18–22 ns central
+figures), and the endpoint power-series I_x evaluation.
 
 ## Seed admissibility — a negative result
 

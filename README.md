@@ -90,8 +90,13 @@ ref/                      upstream C/Numba reference — fetched, not vendored
 
 The BS-IV method and all seed/boundary derivations are from Hekimoglu & Gökgöz,
 *A Fast Implied Volatility Method with Expansions* ([arXiv:2606.10245](https://arxiv.org/abs/2606.10245)).
-The cross-distribution generalization — one parameterized solver spanning
-BS / IG / gamma / beta — and this Julia implementation are original to this repo.
+The cross-distribution generalization — one solver spanning BS / IG / gamma /
+beta — is A. Hekimoglu's idea. The log-space gamma solver is a port of his
+reference engine; the logit-space beta solver adopts his coordinate change and
+exact endpoint branches over this repo's regime seeds. The generic-dispatch
+Julia architecture, the BS performance work (the exp-reuse identity,
+branch-free fixed-step kernels, SIMD batching), and the IG solver are original
+to this repo.
 
 ## License
 

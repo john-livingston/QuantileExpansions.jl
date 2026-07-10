@@ -20,6 +20,7 @@ include("dists/inverse_gaussian.jl")
 include("dists/gamma.jl")
 include("dists/gamma_log.jl")
 include("dists/beta.jl")
+include("dists/beta_logit.jl")
 
 # generic interface
 export QuantileProblem, solve, seed, hh_terms
@@ -29,6 +30,6 @@ export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_price
 export bs_implied_vol_fixed_batch!, BSFixedWorkspace, vexp, vlog
 # other distributions
-export IGQ, ig_quantile, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, BetaQ, beta_quantile
+export IGQ, ig_quantile, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit
 
 end # module

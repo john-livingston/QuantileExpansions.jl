@@ -1,4 +1,4 @@
-# Gamma quantile in log space — Julia port of Alper's regime-split solver
+# Gamma quantile in log space — Julia port of A. Hekimoglu's regime-split solver
 # (gamma_quant_full_c5_dynamic_boundary_widesafe_engine.c, "full" mode).
 #
 # The unknown is y = ln x, which keeps x > 0 with no clamping and collapses the
@@ -142,7 +142,7 @@ end
     gamma_quantile_log(a, u; tol=1e-14)
 
 Gamma(shape `a`, scale 1) quantile via the log-space regime-split solver
-(port of Alper's C engine). Exact closed forms for `a = 1` and `a = ½`.
+(port of A. Hekimoglu's C engine). Exact closed forms for `a = 1` and `a = ½`.
 """
 @inline function gamma_quantile_log(a::Float64, u::Float64; tol::Float64 = 1e-14)
     u <= 0.0 && return 0.0
@@ -156,6 +156,6 @@ Gamma(shape `a`, scale 1) quantile via the log-space regime-split solver
     return exp(y)
 end
 
-# density-scaled convergence (Alper's criterion): residual small AND the
+# density-scaled convergence (Hekimoglu's criterion): residual small AND the
 # log-Newton step |f/fp| = |Δ ln x| negligible — required for tail accuracy.
 @inline converged(::GammaLogQ, f, fp, tol) = abs(f) < tol && abs(f) <= 2e-14 * fp
