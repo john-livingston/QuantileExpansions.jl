@@ -17,6 +17,7 @@ include("core/vecmath.jl")
 include("dists/blackscholes.jl")
 include("dists/blackscholes_simd.jl")
 include("dists/inverse_gaussian.jl")
+include("dists/inverse_gaussian_simd.jl")
 include("dists/gamma.jl")
 include("dists/gamma_log.jl")
 include("dists/beta.jl")
@@ -30,6 +31,6 @@ export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_price
 export bs_implied_vol_fixed_batch!, BSFixedWorkspace, vexp, vlog
 # other distributions
-export IGQ, ig_quantile, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert
+export IGQ, ig_quantile, ig_quantile_batch!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert
 
 end # module

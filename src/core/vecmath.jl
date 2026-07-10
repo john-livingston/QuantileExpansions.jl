@@ -136,3 +136,40 @@ end
     g = vexp(-0.5 * x * x)
     return phi_withg_bf(x, g), INV_SQRT2PI * g
 end
+
+# Blended branch-free erfcx(y) for y ≥ 0 (all three Cody ranges evaluated,
+# lane-selected). The small branch needs exp(y²); vexp's clamp keeps discarded
+# large-y lanes finite (never NaN), so the select is safe.
+@inline function erfcx_bf(y)
+    z = y * y
+    # small: e^{y²}(1 - erf(y))
+    num_s = _ERF_P[5] * z
+    den_s = z
+    num_s = (num_s + _ERF_P[1]) * z; den_s = (den_s + _ERF_Q[1]) * z
+    num_s = (num_s + _ERF_P[2]) * z; den_s = (den_s + _ERF_Q[2]) * z
+    num_s = (num_s + _ERF_P[3]) * z; den_s = (den_s + _ERF_Q[3]) * z
+    erf_s = y * (num_s + _ERF_P[4]) / (den_s + _ERF_Q[4])
+    v_s = vexp(min(z, 700.0)) * (1.0 - erf_s)
+    # mid rational
+    num_m = _ERFC_P[9] * y
+    den_m = y
+    num_m = (num_m + _ERFC_P[1]) * y; den_m = (den_m + _ERFC_Q[1]) * y
+    num_m = (num_m + _ERFC_P[2]) * y; den_m = (den_m + _ERFC_Q[2]) * y
+    num_m = (num_m + _ERFC_P[3]) * y; den_m = (den_m + _ERFC_Q[3]) * y
+    num_m = (num_m + _ERFC_P[4]) * y; den_m = (den_m + _ERFC_Q[4]) * y
+    num_m = (num_m + _ERFC_P[5]) * y; den_m = (den_m + _ERFC_Q[5]) * y
+    num_m = (num_m + _ERFC_P[6]) * y; den_m = (den_m + _ERFC_Q[6]) * y
+    num_m = (num_m + _ERFC_P[7]) * y; den_m = (den_m + _ERFC_Q[7]) * y
+    v_m = (num_m + _ERFC_P[8]) / (den_m + _ERFC_Q[8])
+    # large asymptotic
+    zz = 1.0 / max(z, 1e-300)
+    num_l = _ERFC_R[6] * zz
+    den_l = zz
+    num_l = (num_l + _ERFC_R[1]) * zz; den_l = (den_l + _ERFC_S[1]) * zz
+    num_l = (num_l + _ERFC_R[2]) * zz; den_l = (den_l + _ERFC_S[2]) * zz
+    num_l = (num_l + _ERFC_R[3]) * zz; den_l = (den_l + _ERFC_S[3]) * zz
+    num_l = (num_l + _ERFC_R[4]) * zz; den_l = (den_l + _ERFC_S[4]) * zz
+    v_l = zz * (num_l + _ERFC_R[5]) / (den_l + _ERFC_S[5])
+    v_l = (0.5641895835477563 - v_l) / max(y, 1e-300)
+    return sel(y <= 0.46875, v_s, sel(y <= 4.0, v_m, v_l))
+end

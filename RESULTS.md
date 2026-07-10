@@ -221,6 +221,24 @@ cost is the density-scaled stop demanding true convergence (x-space's apparent
 speed there comes from stopping early, wrong). Both beat Distributions ~1.7–2×.
 `beta_quantile_logit` is the recommended beta path.
 
+## SIMD Inverse Gaussian batch (`ig_quantile_batch!`)
+
+The BS SIMD treatment applied to IG (fixed (μ,λ), batch over p — the natural
+sampling workload): branch-free seed (`norminv_bf` + a quadratic in √x) and
+exactly N HH-4 updates, W lanes wide. Per iteration the CDF costs **one vexp**:
+α²/2 equals the density exponent (so the gaussian factor G = e^{-α²/2} is
+shared, as in the scalar solver), and the second Φ term uses a blended
+branch-free `erfcx`. N=3 already reaches machine forward residual (max
+|F(x)−p| ≈ 5e-16 — the IG seed is the best in the repo), so fixed-3 is exact:
+
+| (μ,λ)    | scalar ns/q | batch W=8 N=3 | speedup | vs Distributions (~600 ns) |
+|----------|------------:|--------------:|--------:|---------------------------:|
+| (1, 3)   |        63.8 |      **37.2** |    1.7× |                        ~16× |
+| (1, 0.5) |        82.0 |      **37.2** |    2.2× |                        ~16× |
+| (2, 1)   |        82.0 |      **37.3** |    2.2× |                        ~16× |
+
+(2-wide NEON; x86 wide-vector gains follow the BS pattern.)
+
 ## K4 acceptance certificates (`solve_certified`)
 
 Generalization of Hekimoglu's y6/K4 acceptance certificates to the whole

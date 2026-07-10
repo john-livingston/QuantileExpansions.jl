@@ -169,6 +169,19 @@ end
     @test mf < 1e-12
 end
 
+@testset "SIMD IG batch" begin
+    ps = collect(range(0.001, 0.999, length=512))
+    out = similar(ps)
+    for (μ,λ) in ((1.0,3.0),(1.0,0.5),(2.0,1.0)), W in (2,4,8)
+        ig_quantile_batch!(out, μ, λ, ps, Val(3), Val(W))
+        mf = maximum(abs(Distributions.cdf(Distributions.InverseGaussian(μ,λ),out[i]) - ps[i]) for i in eachindex(ps))
+        @test mf < 1e-13
+        mr = maximum(abs(out[i]-ig_quantile(μ,λ,ps[i]))/max(out[i],1e-300) for i in eachindex(ps))
+        @test mr < 1e-10
+    end
+    @test (@allocated ig_quantile_batch!(out, 1.0, 3.0, ps, Val(3), Val(8))) == 0
+end
+
 @testset "allocation-free scalar solvers" begin
     @test (@allocated bs_implied_vol(0.1, 0.06)) == 0
     @test (@allocated ig_quantile(1.0, 3.0, 0.7)) == 0
