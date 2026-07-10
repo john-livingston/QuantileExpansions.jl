@@ -32,16 +32,19 @@ jobs:
 
       # This project is an application (no name/uuid in Project.toml), so we
       # instantiate + run the test script directly rather than using Pkg.test().
-      # The committed Manifest.toml was resolved on 1.12; fall back to a fresh
-      # resolve if it is incompatible with an older Julia.
+      # The committed Manifest.toml was resolved on 1.12; instantiate materializes
+      # those exact versions even on older Julia, where they may fail only at
+      # precompile time — so precompile inside the try, and fall back to a fresh
+      # resolve (which respects julia compat bounds) on any failure.
       - name: Instantiate
         run: |
           julia --project=. -e '
             using Pkg
             try
                 Pkg.instantiate()
+                Pkg.precompile()
             catch err
-                @warn "instantiate from Manifest failed; resolving fresh" err
+                @warn "Manifest incompatible with this Julia; resolving fresh" err
                 rm("Manifest.toml"; force=true)
                 Pkg.instantiate()
             end'

@@ -104,6 +104,38 @@ Caveat: only the *iteration* is branch-free. `bs_seed` still branches on regime
 and the Cody `erfc` on `|d|` range; both must be bucketed or blended before this
 can actually be vectorized.
 
+## SIMD batch kernel (`bs_implied_vol_fixed_batch!`)
+
+The fixed-step kernel's uniform instruction path enables explicit vectorization
+(SIMD.jl `Vec{W,Float64}`). Two passes: a scalar seed pass (regime branches stay
+scalar), then exactly N branch-free HH-4 updates on W lanes at once — blended
+3-branch Cody Φ (all ranges evaluated, lane-selected) and a branch-free `vexp`
+(Cody–Waite + degree-13 polynomial + exponent bit-trick, 1 ulp).
+
+Measured on both ISAs (single thread, 1.64M-IV grid, best-of-N):
+
+| host                       | scalar f2 | scalar f3 | batch W=8 f2 | batch W=8 f3 | polish speedup |
+|----------------------------|----------:|----------:|-------------:|-------------:|---------------:|
+| Apple Silicon (NEON 2-wide)|   51.9 ns |   79.2 ns |  **32.8 ns** |  **44.2 ns** | 2.07× / 2 lanes|
+| GitHub Zen4 (AVX-512)      |  120.9 ns |  167.8 ns |  **51.1 ns** |  **61.3 ns** | 4.5× / 8 lanes |
+
+(Zen4 "double-pumps" 512-bit ops as 2×256-bit, so ~4–5× is that core's real
+ceiling — the polish vectorizes at essentially full lane efficiency on both
+ISAs. The blend-everything overhead is fully paid for by eliminating branches.
+W=8 wins even on 2-wide NEON: four interleaved bundles hide instruction latency.)
+
+Two consequences:
+- **Full-precision fixed-3 batch is faster than scalar fast-mode fixed-2 on both
+  hosts** — on batches there is no longer a speed reason to give up accuracy.
+- **Amdahl has moved to the seed pass**: it costs 11.3 ns (NEON) / 30.9 ns (Zen4)
+  of the 44.2 / 61.3 ns totals — 26% / 50%. Vectorizing the seed (blending the
+  polynomial regimes, which are already arithmetic-only, with a scalar fallback
+  for the rare deep/tail lanes) is the next lever; it bounds a further ~1.3–1.9×.
+
+Accuracy is identical to the scalar fixed kernel up to `vexp`-vs-`exp` rounding
+(≤1e-13 pointwise; same 2.9e-11 / 1.3e-15 grid figures) with the same validity
+domain (delta ∈ [0.05, 0.95]).
+
 ## Seed admissibility — a negative result
 
 Two HH-4 steps reach `ε` from relative seed error `δ` iff `δ ≤ δ* = ε^(1/16)`
