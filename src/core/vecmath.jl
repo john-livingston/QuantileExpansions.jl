@@ -40,6 +40,55 @@ const _VEXP_C = (1.0, 1.0, 0.5, 1.0/6, 1.0/24, 1.0/120, 1.0/720, 1.0/5040,
     return evalpoly(r, _VEXP_C) * _pow2(n)
 end
 
+# --- branch-free natural log (for the blended Acklam tails) ------------------
+# Exponent bit-extract + atanh-series mantissa polynomial. Absolute error
+# ~5e-13 — far more than the seeds need (their norminv tolerance is ~1e-6;
+# the HH-4 polish erases seed-level differences quartically).
+const _VLOG_OFF = 0x3fe6a09e667f3bcd            # bits of √0.5: mantissa ∈ [√0.5, √2)
+const _VLOG_LN2HI = 0.6931471803691238
+const _VLOG_LN2LO = 1.9082149292705877e-10
+# 2·atanh(s) = 2s·(1 + w/3 + w²/5 + …), w = s²; |s| ≤ 0.1716 ⇒ w ≤ 0.0295
+const _VLOG_C = (1.0, 1.0/3, 1.0/5, 1.0/7, 1.0/9, 1.0/11, 1.0/13)
+
+@inline _bits(x::Float64) = reinterpret(Int64, x)
+@inline _bits(x::Vec{W,Float64}) where {W} = reinterpret(Vec{W,Int64}, x)
+@inline _float(i::Int64) = reinterpret(Float64, i)
+@inline _float(i::Vec{W,Int64}) where {W} = reinterpret(Vec{W,Float64}, i)
+@inline _tofloat(i::Int64) = Float64(i)
+@inline _tofloat(i::Vec{W,Int64}) where {W} = convert(Vec{W,Float64}, i)
+
+@inline function vlog(x)
+    xc = min(max(x, 1e-300), 1e300)             # keep strictly positive/finite
+    ix = _bits(xc)
+    ki = (ix - reinterpret(Int64, _VLOG_OFF)) >> 52
+    m = _float(ix - (ki << 52))                 # mantissa ∈ [√0.5, √2)
+    kf = _tofloat(ki)
+    s = (m - 1.0) / (m + 1.0)
+    w = s * s
+    lm = 2.0 * s * evalpoly(w, _VLOG_C)
+    return muladd(kf, _VLOG_LN2HI, lm) + kf * _VLOG_LN2LO
+end
+
+# --- branch-free Acklam Φ⁻¹ (all three branches evaluated, lane-selected) -----
+# Same rationals as norminv in specialfuns.jl; tails use q = √(-2·vlog(p̃)).
+# Out-of-domain p ≤ 0 / ≥ 1 saturates to ∓38 like the scalar guard.
+@inline function norminv_bf(p)
+    pc = min(max(p, 1e-300), 1.0 - 1.1e-16)
+    # central branch
+    q = pc - 0.5
+    r = q * q
+    zc = (((((_AK_A[1]*r+_AK_A[2])*r+_AK_A[3])*r+_AK_A[4])*r+_AK_A[5])*r+_AK_A[6])*q /
+         (((((_AK_B[1]*r+_AK_B[2])*r+_AK_B[3])*r+_AK_B[4])*r+_AK_B[5])*r+1.0)
+    # tail branch on the smaller side, sign-folded
+    pt = min(pc, 1.0 - pc)
+    qt = sqrt(-2.0 * vlog(pt))
+    zt = (((((_AK_C[1]*qt+_AK_C[2])*qt+_AK_C[3])*qt+_AK_C[4])*qt+_AK_C[5])*qt+_AK_C[6]) /
+         ((((_AK_D[1]*qt+_AK_D[2])*qt+_AK_D[3])*qt+_AK_D[4])*qt+1.0)
+    zt = sel(pc < 0.5, zt, -zt)
+    z = sel((pc >= 0.02425) & (pc <= 0.97575), zc, zt)
+    return min(max(z, -38.0), 38.0)
+end
+
 # --- blended Cody Φ (all three range branches evaluated, lane-selected) -------
 # Same rationals as specialfuns.jl; the small branch is the erf rational, the
 # mid/large are the erfcx rationals scaled by the caller-supplied g = e^{-x²/2}.

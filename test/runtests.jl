@@ -68,16 +68,18 @@ end
     # batch agrees with the scalar fixed kernel and holds its accuracy bounds
     pts = paper_grid()
     ks = [p[1] for p in pts]; cs = [p[2] for p in pts]; vt = [p[3] for p in pts]
-    out = similar(ks); ws = BSFixedWorkspace(length(ks))
-    for NIT in (2, 3), W in (2, 4, 8)
-        bs_implied_vol_fixed_batch!(out, ks, cs, Val(NIT), Val(W); ws=ws)
+    out = similar(ks)
+    for NIT in (2, 3), W in (2, 4, 8), vseed in (true, false)
+        bs_implied_vol_fixed_batch!(out, ks, cs, Val(NIT), Val(W); vector_seed=vseed)
         dvs = maximum(abs(out[i] - bs_implied_vol_fixed(ks[i], cs[i], Val(NIT))) for i in eachindex(ks))
-        @test dvs < 1e-13          # only vexp-vs-exp rounding may differ
+        @test dvs < 1e-13          # only vexp/vlog-vs-libm rounding may differ
     end
-    bs_implied_vol_fixed_batch!(out, ks, cs, Val(3), Val(4); ws=ws)
+    bs_implied_vol_fixed_batch!(out, ks, cs, Val(3), Val(4))
     @test maximum(abs(out[i] - vt[i]) for i in eachindex(ks)) < 5e-15
-    # allocation-free with preallocated workspace
-    @test (@allocated bs_implied_vol_fixed_batch!(out, ks, cs, Val(2), Val(4); ws=ws)) == 0
+    # allocation-free: fused always; two-pass with preallocated workspace
+    @test (@allocated bs_implied_vol_fixed_batch!(out, ks, cs, Val(2), Val(4); vector_seed=true)) == 0
+    ws = BSFixedWorkspace(length(ks))
+    @test (@allocated bs_implied_vol_fixed_batch!(out, ks, cs, Val(2), Val(4); vector_seed=false, ws=ws)) == 0
 end
 
 @testset "near-parity ITM prices do not throw (regression)" begin

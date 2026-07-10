@@ -41,7 +41,7 @@ end
 # Odd-polynomial CDF surrogate and its v-derivative, evaluated at v.
 # P_m(x) = ½ + a1·S(x);  S(x) = x - x³/6 + x⁵/40 - x⁷/336  (truncate at order m)
 # S'(x)   = 1 - x²/2 + x⁴/8 - x⁶/48                          (partial e^{-x²/2})
-@inline function _poly_S(x::Float64, ::Val{M}) where {M}
+@inline function _poly_S(x, ::Val{M}) where {M}   # generic: Float64 or Vec
     x2 = x * x
     if M == 1
         return x
@@ -51,7 +51,7 @@ end
         return x * (1.0 - x2 * (1.0/6.0 - x2 * (1.0/40.0 - x2 * (1.0/336.0))))
     end
 end
-@inline function _poly_dS(x::Float64, ::Val{M}) where {M}
+@inline function _poly_dS(x, ::Val{M}) where {M}
     x2 = x * x
     if M == 1
         return 1.0
