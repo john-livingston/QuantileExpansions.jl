@@ -33,14 +33,15 @@ standard C/Rmath algorithms), and vs the paper authors' own C kernel for BS-IV
 with no error signal; use the adaptive solver for deep-OTM inputs. The 3-step
 variant holds 1.6e-15 across the whole band at ~79 ns.
 
+| Inverse Gaussian  |   ~76 ns/q   | Distributions: ~600  | **7.6×**| \|F(x)−p\| ~1e-13 |
+| Gamma (log-space) |  ~130 ns/q   | Distributions: ~270  | 2.1×    | ~1e-10 deep tails |
+| Beta (logit-space)|  ~303 ns/q   | Distributions: ~821  | 2.7×    | ~2e-14 uniform    |
+
 **SIMD batches** (`bs_implied_vol_fixed_batch!`, explicit `Vec{W}` over the
 branch-free kernel, with an ISA-adaptive seed strategy): full-precision 3-step
 drops to **~44 ns/IV** on 2-wide NEON and to **2.65× the same-host scalar
-speed** on x86 (GitHub Zen3/Zen4 runners), the polish vectorizing at ~full
-lane efficiency on both ISAs. See [`RESULTS.md`](RESULTS.md).
-| Inverse Gaussian  |   ~76 ns/q   | Distributions: ~600  | **7.6×**| \|F(x)−p\| ~1e-13 |
-| Gamma             |  ~185 ns/q   | Distributions: ~285  | 1.5×    | \|F(x)−p\| ~1e-13 |
-| Beta              |  ~470 ns/q   | Distributions: ~820  | 1.8×    | \|F(x)−p\| ~1e-13 |
+speed** on x86 (GitHub Zen3/Zen4 runners); threads × SIMD reaches **~4.8 ns/IV**
+(~208M/s) on 10 cores. See [`RESULTS.md`](RESULTS.md).
 
 **The BS-IV solver beats the reference C on identical hardware**, with ~6× better
 max error, single-threaded. See [`RESULTS.md`](RESULTS.md) for the full writeup.
@@ -52,9 +53,9 @@ include("src/QuantileExpansions.jl"); using .QuantileExpansions
 
 bs_implied_vol(0.1, 0.06)              # Black–Scholes implied total vol from (log-moneyness, price)
 bs_implied_vol_fixed(0.1, 0.06, Val(2))  # branch-free fast mode (~1e-8 in the 5–95 delta band)
-ig_quantile(1.0, 3.0, 0.7)     # Inverse Gaussian quantile (μ, λ, p)
-gamma_quantile(2.5, 0.4)       # Gamma quantile (shape a, p)
-beta_quantile(2.0, 5.0, 0.4)   # Beta quantile (a, b, p)
+ig_quantile(1.0, 3.0, 0.7)             # Inverse Gaussian quantile (μ, λ, p)
+gamma_quantile_log(2.5, 0.4)           # Gamma quantile (shape a, p)
+beta_quantile_logit(2.0, 5.0, 0.4)     # Beta quantile (a, b, p)
 ```
 
 Run the tests and the full benchmark table:
