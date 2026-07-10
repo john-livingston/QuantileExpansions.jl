@@ -150,6 +150,48 @@ Consequences:
   exact at 1e-14, cutting another ~30%), further divide reduction in the
   blended Φ, and thread × SIMD composition.
 
+## Gamma in log space (`gamma_quantile_log`) — port of Alper's engine
+
+Port of the collaborator's C engine (`gamma_quant_full_c5_dynamic_boundary_
+widesafe_engine.c`, "full" mode) into the generic solver: the unknown becomes
+y = ln x, which keeps x > 0 with no clamping and collapses the HH-4 ratios to
+polynomials (F''/F' = a−x, F'''/F' = (a−x)²−x). His method drops into the same
+`solve()` as a new `QuantileProblem` — the port is the seeds, the regime map,
+and one interface addition: an overridable `converged()` hook, because tail
+accuracy requires his **density-scaled stopping** (|f| < tol AND |f/F'| ≲ 2e-14;
+an absolute CDF residual alone fires before x converges where the density is
+tiny).
+
+Seeds per regime: exact a=1 / a=½; lower-tail series reversion (c2..c4) gated
+by his **analytic c5 boundary** (first omitted coefficient certifies the seed
+to 1e-13 post-polish — the same admissibility mathematics as our δ*, used as a
+per-point certificate); gamma-Mills survival seed for the far upper tail (gated
+on its asymptotics actually holding, x ≫ a); 5th-order Cornish–Fisher for
+central large-a; Wilson–Hilferty fallback.
+
+Head-to-head (per-a batches, 16384 u-points on [1e-8, 1−1e-8], amortized
+constructors, single thread; accuracy = max |Δ ln x| vs Distributions):
+
+| a    | ours ns | log-port ns | Distr. ns | ours max err | log-port max err |
+|------|--------:|------------:|----------:|-------------:|-----------------:|
+| 0.75 | 225.6   | 246.4       | 321.9     | 6.9e-11      | 1.3e-10          |
+| 1    | 170.3   | **2.7**     | 155.1     | 6.1e-11      | 3.6e-15          |
+| 2    | 147.6   | 132.1       | 241.6     | 8.8e-11      | 2.3e-14          |
+| 5    | 143.6   | 129.8       | 269.9     | 1.6e-10      | 3.7e-11          |
+| 10   | 178.4   | 165.3       | 336.0     | 4.3e-09      | 4.7e-11          |
+| 50   | 99.7    | 151.0       | 280.1     | **7.1e-07**  | 8.7e-11          |
+| 100  | 99.1    | 149.9       | 280.4     | 1.8e-07      | 2.1e-11          |
+
+**Verdict: the log-space formulation wins.** Comparable-or-better speed in the
+bulk, and uniformly ~1e-10 log-accuracy where our x-space solver's absolute
+tolerance lets tail error degrade to 1e-7 (it is *faster* there precisely
+because it stops too early). Both beat Distributions by ~1.5–2.5×.
+`gamma_quantile_log` is the recommended gamma path; `gamma_quantile` is kept
+as the x-space baseline. Port caveats: the Mills seed needed an explicit
+validity gate (yt > 2·max(a−1,1)) his dispatch achieves differently, and the
+a=½ exact branch inherits Acklam-norminv accuracy (~1e-8 deep-tail log error)
+exactly as his engine does.
+
 ## Seed admissibility — a negative result
 
 Two HH-4 steps reach `ε` from relative seed error `δ` iff `δ ≤ δ* = ε^(1/16)`

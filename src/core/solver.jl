@@ -23,12 +23,18 @@ abstract type QuantileProblem end
 # δ_v* = tol^(1/16): relative seed error admissible for 2 net HH-4 steps.
 @inline admissible_seed_error(tol) = tol^(1.0 / 16.0)
 
+# Convergence test, overridable per distribution. Default: absolute CDF/price
+# residual. Distributions solved deep in the tails (density fp → 0, so |f| < tol
+# fires before x has converged) should additionally require the Newton step
+# |f/fp| to be negligible — a density-scaled criterion.
+@inline converged(::QuantileProblem, f, fp, tol) = abs(f) < tol
+
 @inline function solve(D::QuantileProblem, p::Float64; tol::Float64 = 1e-14, maxiter::Int = 8)
     x = seed(D, p)
     lo = xlo(D); hi = xhi(D)
     @inbounds for _ in 1:maxiter
         f, fp, φ2, ξ = hh_terms(D, x, p)
-        abs(f) < tol && break
+        converged(D, f, fp, tol) && break
         r = f / fp
         denom = -6.0 + r * (6.0 * φ2 - r * ξ)
         xn = abs(denom) < 1e-20 ? x - r : x + 3.0 * r * (2.0 - r * φ2) / denom

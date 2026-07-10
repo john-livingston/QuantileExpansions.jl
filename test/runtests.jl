@@ -104,6 +104,21 @@ end
     @test mf < 1e-12
 end
 
+@testset "Gamma log-space solver (Alper port)" begin
+    # exact branches
+    @test gamma_quantile_log(1.0, 0.3) ≈ -log1p(-0.3) rtol=1e-15
+    @test gamma_quantile_log(0.5, 0.7) ≈ Distributions.quantile(Distributions.Gamma(0.5,1.0), 0.7) rtol=1e-8
+    # log-x accuracy across shapes incl. deep tails (the x-space solver's weak spot)
+    ml = 0.0
+    for a in [0.75, 2.0, 5.0, 10.0, 50.0, 100.0],
+        u in [1e-8, 1e-4, 0.01, 0.3, 0.5, 0.9, 0.999, 1-1e-6]
+        xr = Distributions.quantile(Distributions.Gamma(a,1.0), u)
+        ml = max(ml, abs(log(gamma_quantile_log(a, u)) - log(xr)))
+    end
+    @test ml < 1e-9
+    @test (@allocated gamma_quantile_log(5.0, 0.3)) == 0
+end
+
 @testset "Beta vs Distributions (forward residual)" begin
     mf = 0.0
     for a in [0.5,1.0,2.0,5.0,20.0], b in [0.5,1.0,2.0,5.0,20.0], p in [1e-3,0.01,0.1,0.5,0.9,0.99,0.999]
