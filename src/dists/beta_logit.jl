@@ -14,6 +14,31 @@ struct BetaLogitQ <: QuantileProblem
     a::Float64
     b::Float64
     lb::Float64        # ln B(a,b)
+    κ1::Float64        # mean (CF5 seed, precomputed per (a,b))
+    sκ2::Float64       # √variance
+    g1::Float64        # skewness κ3/κ2^{3/2}
+    g2::Float64        # excess kurtosis κ4/κ2²
+    g5::Float64        # κ5/κ2^{5/2}
+end
+function BetaLogitQ(a::Float64, b::Float64, lb::Float64)
+    n = a + b
+    # raw moments m_k = Π_{j<k} (a+j)/(n+j), cumulants, standardized ratios —
+    # once per (a,b); the per-quantile CF5 seed is then pure Horner in z
+    m1 = a/n
+    m2 = m1*(a+1)/(n+1)
+    m3 = m2*(a+2)/(n+2)
+    m4 = m3*(a+3)/(n+3)
+    m5 = m4*(a+4)/(n+4)
+    κ1 = m1
+    κ2 = m2 - m1^2
+    κ3 = m3 - 3m1*m2 + 2m1^3
+    κ4 = m4 - 4m1*m3 - 3m2^2 + 12m1^2*m2 - 6m1^4
+    κ5 = m5 - 5m1*m4 - 10m2*m3 + 20m1^2*m3 + 30m1*m2^2 - 60m1^3*m2 + 24m1^5
+    sκ2 = sqrt(max(κ2, 0.0))
+    g1 = κ3 / max(κ2*sκ2, 1e-300)
+    g2 = κ4 / max(κ2*κ2, 1e-300)
+    g5 = κ5 / max(κ2*κ2*sκ2, 1e-300)
+    BetaLogitQ(a, b, lb, κ1, sκ2, g1, g2, g5)
 end
 BetaLogitQ(a::Float64, b::Float64) = BetaLogitQ(a, b, logbeta(a, b))
 
@@ -21,7 +46,24 @@ BetaLogitQ(a::Float64, b::Float64) = BetaLogitQ(a, b, logbeta(a, b))
 @inline xhi(::BetaLogitQ) = 700.0
 
 @inline function seed(D::BetaLogitQ, p::Float64)
-    x0 = seed(BetaQ(D.a, D.b, D.lb), p)          # reuse the x-space regime seeds
+    a = D.a; b = D.b
+    x0 = -1.0
+    if a >= 1.0 && b >= 1.0
+        # CF5 central seed (Hekimoglu): 5th-cumulant Cornish–Fisher, precomputed
+        # per (a,b) — accurate enough for the K4 certificate to fire centrally
+        z = norminv(p)
+        if abs(z) <= 2.5
+            z2 = z*z
+            g1 = D.g1; g2 = D.g2; g5 = D.g5
+            w = z + (g1/6)*(z2-1) + (g2/24)*z*(z2-3) - (g1*g1/36)*z*(2z2-5) +
+                (g5/120)*(z2*z2-6z2+3) - (g1*g2/24)*(z2*z2-5z2+2) +
+                (g1^3/324)*(12z2*z2-53z2+17)
+            x0 = D.κ1 + D.sκ2 * w
+        end
+    end
+    if !(0.0 < x0 < 1.0)
+        x0 = seed(BetaQ(a, b, D.lb), p)          # regime seeds (tails, sub-1 shapes)
+    end
     x0 = clamp(x0, 1e-300, 1.0 - 1e-16)
     return log(x0) - log1p(-x0)                   # logit
 end
@@ -70,6 +112,41 @@ regime seeds). Tail-symmetric: p > ½ solves the mirrored problem.
         y = solve(BetaLogitQ(b, a), 1.0 - p; tol = tol)
         # 1 - σ(y): σ computed as e^y/(1+e^y) so the final subtraction keeps
         # the last ulp below 1 (1/(1+e^y) would round through 1+tiny -> 1.0)
+        ey = exp(y)
+        return 1.0 - ey / (1.0 + ey)
+    end
+end
+
+# f''''/f' in logit space: with n = a+b, A = a - nx, D = x(1-x),
+# F⁗/F' = A³ - 3AnD - nD(1-2x)   (matches Hekimoglu's K4 = |5c2³-5c2c3+c4|)
+@inline has_c4(::BetaLogitQ) = true
+@inline function hh4_c4(D::BetaLogitQ, y::Float64)
+    a = D.a; b = D.b; n = a + b
+    x = 1.0 / (1.0 + exp(-y))
+    omx = 1.0 / (1.0 + exp(y))
+    A = a - n * x
+    nD = n * x * omx
+    return A * (A * A - 3.0 * nD) - nD * (1.0 - 2.0 * x)
+end
+
+"Certified variant of [`beta_quantile_logit`]: skips the confirmation CDF
+evaluation when the K4 error model certifies the first HH-4 update below τ."
+@inline function beta_quantile_logit_cert(a::Float64, b::Float64, p::Float64; tol::Float64 = 1e-14)
+    p <= 0.0 && return 0.0
+    p >= 1.0 && return 1.0
+    if b == 1.0
+        return p^(1.0 / a)
+    elseif a == 1.0
+        return -expm1(log1p(-p) / b)
+    elseif a == 0.5 && b == 0.5
+        s = sinpi(0.5 * p)
+        return s * s
+    end
+    if p <= 0.5
+        y = solve_certified(BetaLogitQ(a, b), p; tol = tol)
+        return 1.0 / (1.0 + exp(-y))
+    else
+        y = solve_certified(BetaLogitQ(b, a), 1.0 - p; tol = tol)
         ey = exp(y)
         return 1.0 - ey / (1.0 + ey)
     end

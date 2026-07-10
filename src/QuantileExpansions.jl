@@ -23,13 +23,13 @@ include("dists/beta.jl")
 include("dists/beta_logit.jl")
 
 # generic interface
-export QuantileProblem, solve, seed, hh_terms
+export QuantileProblem, solve, solve_certified, seed, hh_terms
 # special functions
 export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 # Black–Scholes
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_price
 export bs_implied_vol_fixed_batch!, BSFixedWorkspace, vexp, vlog
 # other distributions
-export IGQ, ig_quantile, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit
+export IGQ, ig_quantile, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert
 
 end # module

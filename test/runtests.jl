@@ -147,6 +147,19 @@ end
     @test mf < 1e-12
 end
 
+@testset "K4 certified solve" begin
+    # certified variants must agree with the full solvers EXACTLY wherever the
+    # certificate fires (it may only skip provably-converged confirmation evals)
+    for a in [0.75, 2.0, 5.0, 50.0], u in [0.05, 0.2, 0.5, 0.8, 0.95, 1e-4, 0.999]
+        @test gamma_quantile_log_cert(a, u) == gamma_quantile_log(a, u)
+    end
+    for (a,b) in ((2.0,5.0),(20.0,12.5),(5.0,0.2)), u in [0.05, 0.3, 0.5, 0.7, 0.95, 1e-4]
+        @test beta_quantile_logit_cert(a, b, u) == beta_quantile_logit(a, b, u)
+    end
+    @test (@allocated gamma_quantile_log_cert(5.0, 0.3)) == 0
+    @test (@allocated beta_quantile_logit_cert(2.0, 5.0, 0.4)) == 0
+end
+
 @testset "Inverse Gaussian vs Distributions" begin
     mf = 0.0
     for (μ,λ) in [(1.0,0.5),(1.0,3.0),(1.0,50.0),(2.0,1.0),(3.0,0.3)], p in [1e-4,0.01,0.1,0.5,0.9,0.99,1-1e-4]

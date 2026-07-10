@@ -159,3 +159,25 @@ end
 # density-scaled convergence (Hekimoglu's criterion): residual small AND the
 # log-Newton step |f/fp| = |Δ ln x| negligible — required for tail accuracy.
 @inline converged(::GammaLogQ, f, fp, tol) = abs(f) < tol && abs(f) <= 2e-14 * fp
+
+# f''''/f' in log space: with A = a - x,  d/dy A = -x,
+# F⁗/F' = A³ - 3Ax - x  (enables the K4 certificate)
+@inline has_c4(::GammaLogQ) = true
+@inline function hh4_c4(D::GammaLogQ, y::Float64)
+    x = exp(y)
+    A = D.a - x
+    return A * (A * A - 3.0 * x) - x
+end
+
+"Certified variant of [`gamma_quantile_log`]: skips the confirmation CDF
+evaluation when the K4 error model certifies the first HH-4 update below τ."
+@inline function gamma_quantile_log_cert(a::Float64, u::Float64; tol::Float64 = 1e-14)
+    u <= 0.0 && return 0.0
+    u >= 1.0 && return Inf
+    a == 1.0 && return -log1p(-u)
+    if a == 0.5
+        z = norminv(0.5 * (1.0 + u))
+        return 0.5 * z * z
+    end
+    return exp(solve_certified(GammaLogQ(a), u; tol = tol))
+end

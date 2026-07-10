@@ -221,10 +221,35 @@ cost is the density-scaled stop demanding true convergence (x-space's apparent
 speed there comes from stopping early, wrong). Both beat Distributions ~1.7–2×.
 `beta_quantile_logit` is the recommended beta path.
 
-Not yet ported from his beta engine (candidates for later): the ODE5 central
-seed with per-(a,b) precomputed z-polynomials, the y6/K4 acceptance
-certificates (skip-polish-when-certified — the source of his 18–22 ns central
-figures), and the endpoint power-series I_x evaluation.
+## K4 acceptance certificates (`solve_certified`)
+
+Generalization of Hekimoglu's y6/K4 acceptance certificates to the whole
+interface. His beta-specific K4 turns out to be exactly the classical
+Householder-3 asymptotic error constant
+
+    e_next ≈ K4·e⁴,   K4 = |5c₂³ − 5c₂c₃ + c₄|,
+    c₂ = φ₂/2,  c₃ = ξ/6,  c₄ = (f⁗/f′)/24
+
+(verified algebraically against his `(6A³+7nAD−nD(1−2x))/24`), and f⁗/f′ is
+rational for every distribution here, like the other ratios. `solve_certified`
+evaluates `hh_terms` once at the seed, applies the HH-4 update, and **exits
+without a confirmation evaluation** when `16·K4·r⁴ ≤ τ`; uncertified points
+fall through to the adaptive loop, so it is never less accurate — on every test
+point the certified and full solvers agree *bit-for-bit*. Implemented for
+`GammaLogQ` (f⁗/f′ = A³−3Ax−x) and `BetaLogitQ` (A³−3AnD−nD(1−2x)), plus his
+**CF5 central seed** for beta (5th-cumulant Cornish–Fisher, cumulants
+precomputed per (a,b) in the constructor).
+
+Central-grid effect (u ∈ [0.15, 0.85], per-shape batches):
+- gamma: 180 → **126 ns** (1.43×) at a = 5 and a = 50
+- beta (20,12.5): 372 → **295 ns** (1.26×); the CF5 seed also cut the
+  *uncertified* baseline from 524 to 372 ns by itself
+- beta (2,5): no certificate gain — at small n the CF5 seed is not sharp
+  enough for K4·r⁴ ≤ τ; this is exactly the pocket his ODE5 seed serves.
+
+Still unported from his beta engine: the ODE5 central seed (per-(a,b)
+z-polynomials) and the zero-evaluation y6 seed-intrinsic certificate — together
+those are his 18–22 ns central tier — and the endpoint power-series I_x.
 
 ## Seed admissibility — a negative result
 
