@@ -23,7 +23,7 @@ export QuantileProblem, solve, seed, hh_terms
 # special functions
 export normcdf, normpdf, norminv, normcdf_pdf, normcdf_withg, erfc_hi, erfcx_pos
 # Black–Scholes
-export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_price
+export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_price
 # other distributions
 export IGQ, ig_quantile, GammaQ, gamma_quantile, BetaQ, beta_quantile
 

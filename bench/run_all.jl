@@ -19,15 +19,24 @@ function bs_grid()
 end
 bs_ser!(o,k,c)=(@inbounds for i in eachindex(k); o[i]=bs_implied_vol_generic(k[i],c[i]); end; o)
 bs_par!(o,k,c)=(@inbounds Threads.@threads :static for i in eachindex(k); o[i]=bs_implied_vol_generic(k[i],c[i]); end; o)
+bs_f2!(o,k,c) =(@inbounds for i in eachindex(k); o[i]=bs_implied_vol_fixed(k[i],c[i],Val(2)); end; o)
+bs_f3!(o,k,c) =(@inbounds for i in eachindex(k); o[i]=bs_implied_vol_fixed(k[i],c[i],Val(3)); end; o)
+bs_f2p!(o,k,c)=(@inbounds Threads.@threads :static for i in eachindex(k); o[i]=bs_implied_vol_fixed(k[i],c[i],Val(2)); end; o)
 
 function report_bs()
     k0,c0,v0 = bs_grid()
-    me=0.0; for i in eachindex(k0); me=max(me,abs(bs_implied_vol_generic(k0[i],c0[i])-v0[i])); end
+    err(f) = maximum(abs(f(k0[i],c0[i])-v0[i]) for i in eachindex(k0))
+    me = err(bs_implied_vol_generic)
+    e2 = err((k,c)->bs_implied_vol_fixed(k,c,Val(2)))
+    e3 = err((k,c)->bs_implied_vol_fixed(k,c,Val(3)))
     ks=repeat(k0,5000); cs=repeat(c0,5000); out=similar(ks); N=length(ks)
-    bs_ser!(out,ks,cs); bs_par!(out,ks,cs)
-    bser=@benchmark bs_ser!($out,$ks,$cs)
-    bpar=@benchmark bs_par!($out,$ks,$cs)
-    println("BS-IV       max|Δv|=", me, "   serial=", perIV(bser,N), " ns   threaded(", nthreads(), ")=", perIV(bpar,N), " ns")
+    for f in (bs_ser!,bs_par!,bs_f2!,bs_f3!,bs_f2p!); f(out,ks,cs); end
+    println("BS-IV adaptive   max|Δv|=", me, "   serial=", perIV(@benchmark(bs_ser!($out,$ks,$cs)),N),
+            " ns   threaded(", nthreads(), ")=", perIV(@benchmark(bs_par!($out,$ks,$cs)),N), " ns")
+    println("BS-IV fixed-2    max|Δv|=", e2, "   serial=", perIV(@benchmark(bs_f2!($out,$ks,$cs)),N),
+            " ns   threaded(", nthreads(), ")=", perIV(@benchmark(bs_f2p!($out,$ks,$cs)),N), " ns   [branch-free, fast mode]")
+    println("BS-IV fixed-3    max|Δv|=", e3, "   serial=", perIV(@benchmark(bs_f3!($out,$ks,$cs)),N),
+            " ns   [branch-free, full precision]")
 end
 
 # ---------------- helpers for the library-compared dists ----------------

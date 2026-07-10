@@ -70,6 +70,50 @@ polish needs ~2.5–3 evals where bracketing libraries need more.)
   generic solver robust in extreme tails without slowing the (never-triggered)
   fast path.
 
+## Branch-free fixed-step kernel (`bs_implied_vol_fixed`)
+
+The adaptive solver spends ~0.8 of its ~2.8 residual evaluations merely *proving*
+convergence. Running a fixed number of HH-4 updates instead removes both that
+cost and the iteration-count divergence between inputs — the property SIMD needs.
+
+| kernel   | serial ns/IV | threaded (10t) | max abs err |
+|----------|-------------:|---------------:|------------:|
+| adaptive |         69.1 |            8.2 |     4.6e-14 |
+| fixed-2  |     **~55**  |        **6.3** |     2.9e-11 |
+| fixed-3  |         ~81  |              — |     1.3e-15 |
+
+Accuracy follows from quartic convergence alone: a seed with relative error `δ`
+lands at `δ^(4^N)`. The worst seed on the reference grid is `δ ≈ 0.211`, so
+`N=2 → δ¹⁶ ≈ 1.5e-11` (measured 2.9e-11) and `N=3 → δ⁶⁴` ≈ 0, i.e. the machine
+floor (measured 1.3e-15). Theory and measurement agree to within 2×.
+
+Caveat: only the *iteration* is branch-free. `bs_seed` still branches on regime
+and the Cody `erfc` on `|d|` range; both must be bucketed or blended before this
+can actually be vectorized.
+
+## Seed admissibility — a negative result
+
+Two HH-4 steps reach `ε` from relative seed error `δ` iff `δ ≤ δ* = ε^(1/16)`
+(13.3% for `ε=1e-14`). On the reference grid **19 of 328 seeds violate `δ*`** and
+11 need a 3rd update, clustered in three places:
+
+| cluster | regime          | where                          | δ_seed |
+|---------|-----------------|--------------------------------|-------:|
+| 1       | `mild-P7`       | κ≈0.17–0.44, delta=0.05, low v |  0.211 |
+| 2       | `P3`            | κ≈1.31–1.34 (Κ4 edge), high v  |  0.189 |
+| 3       | `tail-override` | κ≈0.51–0.58 (just past κ*=0.5) |  0.191 |
+
+Five re-tunings were tried — a second Mills pass, a `d₂`-based polynomial-validity
+switch, extending `avg(P3,P7)` through Κ4, and a `κ*` sweep — and **all were worse
+or equal** to the published boundaries. The `d₂` switch in particular confirmed
+the authors' `κ > 0.5` guard: the deep/Mills seed is *worse* than P7 in that
+corner. The regime map of arXiv:2606.10245 is a genuine local optimum.
+
+Consequence: making `fixed-2` exact to 1e-14 needs the worst-case seed error cut
+from 21.1% to 13.3% — a change confined to the **low-vol OTM corner of `mild-P7`**.
+That requires a better expansion there (P9/P11, or a small-`v` asymptotic seed),
+not a re-tuned boundary.
+
 ## Accuracy notes
 
 All targets hit `|F(x)−p| < 1e-13` across wide parameter grids. Relative error in

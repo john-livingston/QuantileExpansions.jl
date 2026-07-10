@@ -26,6 +26,23 @@ end
     @test maxerr < 1e-12
 end
 
+@testset "branch-free fixed-step BS kernel" begin
+    vols = vcat(0.01, collect(0.05:0.05:2.0)); deltas = [0.05,0.20,0.30,0.45,0.55,0.70,0.80,0.95]
+    e2 = 0.0; e3 = 0.0
+    for v in vols, D in deltas
+        k = v*(0.5v - sqrt(2)*erfinv(2D-1)); d1 = -k/v+0.5v; d2 = d1-v
+        c = normcdf(d1) - exp(k)*normcdf(d2)
+        e2 = max(e2, abs(bs_implied_vol_fixed(k, c, Val(2)) - v))
+        e3 = max(e3, abs(bs_implied_vol_fixed(k, c, Val(3)) - v))
+    end
+    # quartic convergence: worst seed δ≈0.211 ⇒ δ^16 ≈ 1.5e-11 after 2 steps,
+    # δ^64 ⇒ machine floor after 3.
+    @test e2 < 1e-9
+    @test e3 < 1e-13
+    @test bs_implied_vol_fixed(0.1, 0.06) == bs_implied_vol_fixed(0.1, 0.06, Val(3))  # default
+    @test (@allocated bs_implied_vol_fixed(0.1, 0.06, Val(2))) == 0
+end
+
 @testset "Gamma vs Distributions (forward residual)" begin
     mf = 0.0
     for a in [0.5,1.0,2.0,5.0,20.0,100.0], p in [1e-4,0.01,0.1,0.5,0.9,0.99,1-1e-4]

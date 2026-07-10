@@ -193,3 +193,50 @@ end
     end
     return v
 end
+
+# --- branch-free fixed-step kernel -------------------------------------------
+# Runs exactly N HH-4 updates with no residual test, so every input follows the
+# same instruction path: no iteration-count divergence. That uniformity is the
+# property SIMD needs (the adaptive solver cannot vectorize across lanes that
+# converge at different steps). It is also simply faster in the common case,
+# since the adaptive loop spends ~0.8 of its ~2.8 residual evaluations merely
+# *proving* convergence.
+#
+# Accuracy follows from quartic convergence alone: a seed with relative error δ
+# lands at δ^(4^N). The worst seed on the reference grid is δ ≈ 0.211, so
+#     N = 2  ->  δ^16 ≈ 1.5e-11   (measured 2.9e-11)
+#     N = 3  ->  δ^64 ≈ 0         (measured 1.3e-15, the machine floor)
+# Use Val(2) as a fast mode (~1e-11) and Val(3) for full precision (~1e-15).
+#
+# NOTE: the *iteration* is branch-free, but `bs_seed` still branches on regime
+# and the Cody `erfc` still branches on |d| range. Both must be bucketed or
+# blended before this can actually be vectorized.
+@inline function bs_implied_vol_fixed(k::Float64, c::Float64, ::Val{N} = Val(3)) where {N}
+    κ = abs(k)
+    ek = exp(k)
+    if k >= 0.0
+        cstar = c; E = ek; invE = 1.0 / ek
+    else
+        invek = 1.0 / ek
+        cstar = invek * (c - 1.0 + ek); E = invek; invE = ek
+    end
+    v = bs_seed(κ, cstar, E)
+    @inbounds for _ in 1:N
+        invv = 1.0 / v
+        d1 = -κ * invv + 0.5 * v
+        d2 = d1 - v
+        Φ1, fp = normcdf_pdf(d1)
+        g2 = fp * SQRT2PI * invE          # exp(-d2²/2), free via the identity
+        f = Φ1 - E * normcdf_withg(d2, g2) - cstar
+        r = f / fp
+        d1d2 = d1 * d2
+        φ2 = d1d2 * invv
+        ξ = (d1d2 * d1d2 - (d1 * d1 + d2 * d2) - d1d2) * invv * invv
+        denom = -6.0 + r * (6.0 * φ2 - r * ξ)
+        vn = v + 3.0 * r * (2.0 - r * φ2) / denom
+        vn = ifelse(abs(denom) < 1e-20, v - r, vn)   # Newton fallback (branchless)
+        vn = ifelse(isfinite(vn), vn, v)             # NaN/Inf guard (branchless)
+        v = clamp(vn, 1e-10, 5.0)                    # bounds (min/max, branchless)
+    end
+    return v
+end

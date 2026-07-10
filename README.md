@@ -18,8 +18,10 @@ standard C/Rmath algorithms), and vs the paper authors' own C kernel for BS-IV
 
 | Target            | this repo    | reference            | speedup | accuracy          |
 |-------------------|-------------:|----------------------|--------:|-------------------|
-| Black–Scholes IV  |   ~69 ns/IV  | C kernel: ~110 ns/IV | **1.6×**| max \|Δv\| ~1e-14 |
+| Black–Scholes IV  |   ~69 ns/IV  | C kernel: ~110 ns/IV | **1.6×**| max \|Δv\| 4.6e-14 |
 | BS-IV (threaded)  |  ~8.2 ns/IV  | Numba: 24 ns (12t)   | 2.9×    | —                 |
+| BS-IV fast mode   |   ~55 ns/IV  | C kernel: ~110 ns/IV | **2.0×**| max \|Δv\| 2.9e-11 |
+| BS-IV fast (thr.) |  ~6.3 ns/IV  | Numba: 24 ns (12t)   | 3.8×    | —                 |
 | Inverse Gaussian  |   ~76 ns/q   | Distributions: ~600  | **7.6×**| \|F(x)−p\| ~1e-13 |
 | Gamma             |  ~185 ns/q   | Distributions: ~285  | 1.5×    | \|F(x)−p\| ~1e-13 |
 | Beta              |  ~470 ns/q   | Distributions: ~820  | 1.8×    | \|F(x)−p\| ~1e-13 |
@@ -32,7 +34,8 @@ max error, single-threaded. See [`RESULTS.md`](RESULTS.md) for the full writeup.
 ```julia
 include("src/QuantileExpansions.jl"); using .QuantileExpansions
 
-bs_implied_vol(0.1, 0.06)      # Black–Scholes implied total vol from (log-moneyness, price)
+bs_implied_vol(0.1, 0.06)              # Black–Scholes implied total vol from (log-moneyness, price)
+bs_implied_vol_fixed(0.1, 0.06, Val(2))  # branch-free fast mode (~1e-11, ~1.3× faster)
 ig_quantile(1.0, 3.0, 0.7)     # Inverse Gaussian quantile (μ, λ, p)
 gamma_quantile(2.5, 0.4)       # Gamma quantile (shape a, p)
 beta_quantile(2.0, 5.0, 0.4)   # Beta quantile (a, b, p)
