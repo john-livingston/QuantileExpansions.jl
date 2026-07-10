@@ -13,7 +13,9 @@ module QuantileExpansions
 
 include("core/specialfuns.jl")
 include("core/solver.jl")
+include("core/vecmath.jl")
 include("dists/blackscholes.jl")
+include("dists/blackscholes_simd.jl")
 include("dists/inverse_gaussian.jl")
 include("dists/gamma.jl")
 include("dists/beta.jl")
@@ -24,6 +26,7 @@ export QuantileProblem, solve, seed, hh_terms
 export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 # Black–Scholes
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_fixed, bs_price
+export bs_implied_vol_fixed_batch!, BSFixedWorkspace, vexp
 # other distributions
 export IGQ, ig_quantile, GammaQ, gamma_quantile, BetaQ, beta_quantile
 

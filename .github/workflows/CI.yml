@@ -48,3 +48,20 @@ jobs:
 
       - name: Run tests
         run: julia --project=. test/runtests.jl
+
+  # Informational x86 SIMD benchmark (GitHub runners are AVX2 or AVX-512 x86-64;
+  # local dev hardware is 2-wide NEON, so this is the wide-vector datapoint).
+  simd-bench:
+    name: simd bench / x86-64
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run SIMD benchmark
+        run: julia --project=. -O3 bench/bench_simd.jl

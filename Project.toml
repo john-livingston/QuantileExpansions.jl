@@ -1,4 +1,5 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"

@@ -58,6 +58,28 @@ end
     @test (@allocated bs_implied_vol_fixed(0.1, 0.06, Val(2))) == 0
 end
 
+@testset "SIMD batch kernel" begin
+    # vexp: branch-free exp within ~1 ulp of Base.exp
+    me = 0.0
+    for x in range(-700.0, 700.0, length=20001)
+        me = max(me, abs(vexp(x) - exp(x)) / max(abs(exp(x)), 1e-300))
+    end
+    @test me < 5e-16
+    # batch agrees with the scalar fixed kernel and holds its accuracy bounds
+    pts = paper_grid()
+    ks = [p[1] for p in pts]; cs = [p[2] for p in pts]; vt = [p[3] for p in pts]
+    out = similar(ks); ws = BSFixedWorkspace(length(ks))
+    for NIT in (2, 3), W in (2, 4, 8)
+        bs_implied_vol_fixed_batch!(out, ks, cs, Val(NIT), Val(W); ws=ws)
+        dvs = maximum(abs(out[i] - bs_implied_vol_fixed(ks[i], cs[i], Val(NIT))) for i in eachindex(ks))
+        @test dvs < 1e-13          # only vexp-vs-exp rounding may differ
+    end
+    bs_implied_vol_fixed_batch!(out, ks, cs, Val(3), Val(4); ws=ws)
+    @test maximum(abs(out[i] - vt[i]) for i in eachindex(ks)) < 5e-15
+    # allocation-free with preallocated workspace
+    @test (@allocated bs_implied_vol_fixed_batch!(out, ks, cs, Val(2), Val(4); ws=ws)) == 0
+end
+
 @testset "near-parity ITM prices do not throw (regression)" begin
     # bs price at k=-4, v=0.005: cstar rounds to -2.3e-15 via cancellation;
     # previously norminv(log of negative) threw DomainError.
