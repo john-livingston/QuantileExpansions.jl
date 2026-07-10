@@ -40,13 +40,23 @@ jobs:
         run: |
           julia --project=. -e '
             using Pkg
-            try
+            ok = try
                 Pkg.instantiate()
                 Pkg.precompile()
+                true
             catch err
                 @warn "Manifest incompatible with this Julia; resolving fresh" err
+                false
+            end
+            if !ok
+                # fresh resolve respects julia compat bounds; also purge the
+                # compiled cache — a depot restored by the cache action may hold
+                # stale .ji files from a previous manifest topology (e.g. the
+                # SparseArraysExt-of-Statistics loading failure).
                 rm("Manifest.toml"; force=true)
+                rm(joinpath(DEPOT_PATH[1], "compiled"); force=true, recursive=true)
                 Pkg.instantiate()
+                Pkg.precompile()
             end'
 
       - name: Run tests
