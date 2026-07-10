@@ -18,7 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ['1.10', '1.12']
+        # 1.12 only: the SIMD batch kernel needs a recent LLVM (a Vec codegen
+        # test fails on 1.10), and the committed Manifest is 1.12-resolved.
+        julia-version: ['1.12']
         os: [ubuntu-latest]
 
     steps:
