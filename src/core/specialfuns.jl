@@ -120,9 +120,11 @@ end
     end
 end
 
-# Φ(x) when g = exp(-x²/2) is already known. The Cody rational factors
-# erfc = R(y)·e^{-y²} on the mid/large ranges, so supplying g removes the `exp`
-# there entirely; the small branch uses the erf rational and needs no exp anyway.
+# Φ(x) when g = exp(-x²/2) is already known — internal helper for the HH-4 hot
+# loop (not exported: the g contract below cannot be validated at runtime).
+# Since erfc(y) = erfcx(y)·e^{-y²} and the erfc argument y = |x|/√2 satisfies
+# e^{-y²} == e^{-x²/2} == g, the mid/large ranges need no exp at all; the small
+# branch uses the erf rational, which never needed one.
 # CALLER MUST GUARANTEE  g == exp(-x²/2).
 @inline function normcdf_withg(x::Float64, g::Float64)
     xe = -x * INV_SQRT2
@@ -137,27 +139,8 @@ end
         end
         r = xe * (num + _ERF_P[4]) / (den + _ERF_Q[4])
         return 0.5 * (1.0 - r)
-    elseif y <= 4.0
-        num = _ERFC_P[9] * y
-        den = y
-        @inbounds for i in 1:7
-            num = (num + _ERFC_P[i]) * y
-            den = (den + _ERFC_Q[i]) * y
-        end
-        R = (num + _ERFC_P[8]) / (den + _ERFC_Q[8])
-        ec = R * g
-        return xe < 0 ? 0.5 * (2.0 - ec) : 0.5 * ec
     else
-        z = 1.0 / (y * y)
-        num = _ERFC_R[6] * z
-        den = z
-        @inbounds for i in 1:4
-            num = (num + _ERFC_R[i]) * z
-            den = (den + _ERFC_S[i]) * z
-        end
-        R = z * (num + _ERFC_R[5]) / (den + _ERFC_S[5])
-        R = (0.5641895835477563 - R) / y
-        ec = R * g
+        ec = erfcx_pos(y) * g
         return xe < 0 ? 0.5 * (2.0 - ec) : 0.5 * ec
     end
 end
@@ -212,6 +195,12 @@ const _AK_D = (7.784695709041462e-03, 3.224671290700398e-01,
                2.445134137142996e+00, 3.754408661907416e+00)
 
 @inline function norminv(p::Float64)
+    # Out-of-domain guard (the C reference returns ±38 likewise): near-parity
+    # ITM prices can make the OTM-equivalent price round to ≤ 0 via catastrophic
+    # cancellation; returning a finite deep-tail value instead of throwing
+    # DomainError on log(≤0) keeps every solver entry point total.
+    p <= 0.0 && return -38.0
+    p >= 1.0 && return 38.0
     if p < 0.02425
         q = sqrt(-2.0 * log(p))
         return (((((_AK_C[1]*q+_AK_C[2])*q+_AK_C[3])*q+_AK_C[4])*q+_AK_C[5])*q+_AK_C[6]) /

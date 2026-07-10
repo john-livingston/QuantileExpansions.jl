@@ -1,4 +1,5 @@
 include("../src/core/specialfuns.jl")
+include("../src/core/solver.jl")
 include("../src/dists/blackscholes.jl")
 using BenchmarkTools
 import SpecialFunctions: erfinv

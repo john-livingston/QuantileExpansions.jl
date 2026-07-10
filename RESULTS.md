@@ -27,9 +27,12 @@ C source runs 113.7 ns.)
 
 Two BS entry points trade speed against accuracy. `bs_implied_vol_generic` (the
 one benchmarked above) tests `|f| < tol` *before* updating, so it stops one
-update early: **4.6e-14**, 1.9× better than C. `bs_implied_vol` updates then
-tests, spending one extra step to reach **1.3e-15** — 64× better than C — at a
-few ns more. Both are far inside any practical tolerance.
+update early: **8.9e-14** worst-case on a dense delta×vol sweep (4.6e-14 on the
+grid nodes). `bs_implied_vol` updates then tests, spending one extra step to
+reach **1.6e-15** dense — ~50× better than C — at a few ns more. Both are far
+inside any practical tolerance. (Accuracy figures here and below are worst-case
+over a dense 144k-point sweep of delta ∈ [0.05,0.95] × vol ∈ [0.01,2.0], not
+just the 328 benchmark nodes, which understate off-node error.)
 
 ## All four distributions through ONE generic solver
 
@@ -76,16 +79,26 @@ The adaptive solver spends ~0.8 of its ~2.8 residual evaluations merely *proving
 convergence. Running a fixed number of HH-4 updates instead removes both that
 cost and the iteration-count divergence between inputs — the property SIMD needs.
 
-| kernel   | serial ns/IV | threaded (10t) | max abs err |
-|----------|-------------:|---------------:|------------:|
-| adaptive |         69.1 |            8.2 |     4.6e-14 |
-| fixed-2  |     **~55**  |        **6.3** |     2.9e-11 |
-| fixed-3  |         ~81  |              — |     1.3e-15 |
+| kernel   | serial ns/IV | threaded (10t) | max abs err (dense) | (grid nodes) |
+|----------|-------------:|---------------:|--------------------:|-------------:|
+| adaptive |         69.1 |            8.2 |             8.9e-14 |      4.6e-14 |
+| fixed-2  |     **~52**  |        **6.3** |          **2.3e-8** |      2.9e-11 |
+| fixed-3  |         ~79  |              — |             1.6e-15 |      1.3e-15 |
 
 Accuracy follows from quartic convergence alone: a seed with relative error `δ`
-lands at `δ^(4^N)`. The worst seed on the reference grid is `δ ≈ 0.211`, so
-`N=2 → δ¹⁶ ≈ 1.5e-11` (measured 2.9e-11) and `N=3 → δ⁶⁴` ≈ 0, i.e. the machine
-floor (measured 1.3e-15). Theory and measurement agree to within 2×.
+lands at `δ^(4^N)`. The 328 grid *nodes* understate this badly: the worst node
+seed has `δ ≈ 0.211`, but a dense sweep between nodes finds `δ ≈ 0.33` (at
+v≈0.76, delta≈0.08), and `0.33¹⁶ ≈ 2.5e-8` — matching the measured dense
+fixed-2 error of 2.3e-8. Three steps give `δ⁶⁴ ≈ 0`, i.e. the machine floor
+across the entire region, so **fixed-3 is a safe branch-free default; fixed-2
+is a ~1e-8 fast mode**.
+
+**Validity domain.** These figures hold for delta ∈ [0.05, 0.95],
+vol ∈ [0.01, 2.0]. Outside the delta band the seed can leave the quartic
+convergence basin and fixed-step errors grow to percent level with no error
+signal (e.g. 5.4% at delta=0.001) — use the adaptive `bs_implied_vol`, which
+holds ~1e-15 there, for deep-OTM inputs. Results clamp to v ∈ [1e-10, 5.0]
+(the domain the C reference enforces); NaN inputs propagate to NaN.
 
 Caveat: only the *iteration* is branch-free. `bs_seed` still branches on regime
 and the Cody `erfc` on `|d|` range; both must be bucketed or blended before this
@@ -110,9 +123,9 @@ the authors' `κ > 0.5` guard: the deep/Mills seed is *worse* than P7 in that
 corner. The regime map of arXiv:2606.10245 is a genuine local optimum.
 
 Consequence: making `fixed-2` exact to 1e-14 needs the worst-case seed error cut
-from 21.1% to 13.3% — a change confined to the **low-vol OTM corner of `mild-P7`**.
-That requires a better expansion there (P9/P11, or a small-`v` asymptotic seed),
-not a re-tuned boundary.
+from 33% (dense worst, at v≈0.76, delta≈0.08) to 13.3% — concentrated in the
+**low-delta edge of `mild-P7`**. That requires a better expansion there (P9/P11,
+or a small-`v` asymptotic seed), not a re-tuned boundary.
 
 ## Accuracy notes
 

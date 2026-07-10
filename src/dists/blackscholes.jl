@@ -111,38 +111,33 @@ end
     end
 end
 
-# --- HH-4 polish step (Householder order 3 / quartic) ------------------------
-# f = c_BS - cstar,  f' = φ(d1),  φ2 = f''/f' = d1 d2 / v,
-# ξ = f'''/f' = ((d1 d2)² - (d1²+d2²) - d1 d2)/v².
-#
-# Exact identity, exploited below to save one `exp` per iteration:
-#   d2 = d1 - v  and  d1·v - v²/2 = -κ   ⇒   exp(-d2²/2) = exp(-d1²/2)·e^{-κ}
-# so the gaussian factor for d2 is free once we have the one for d1.
-@inline function hh4_step(κ::Float64, cstar::Float64, v::Float64, E::Float64, invE::Float64)
-    invv = 1.0 / v
-    d1 = -κ * invv + 0.5 * v
-    d2 = d1 - v
-    Φ1, fp = normcdf_pdf(d1)        # Φ(d1) and φ(d1) share one exp
-    g2 = fp * SQRT2PI * invE        # = exp(-d2²/2), no second exp
-    f = Φ1 - E * normcdf_withg(d2, g2) - cstar
-    r = f / fp
-    d1d2 = d1 * d2
-    φ2 = d1d2 * invv
-    ξ = (d1d2 * d1d2 - (d1 * d1 + d2 * d2) - d1d2) * invv * invv
-    denom = -6.0 + r * (6.0 * φ2 - r * ξ)
-    if abs(denom) < 1e-20
-        return v - r, abs(f)
+# --- OTM reduction (shared by every entry point) ------------------------------
+# Map a signed-k call price to the OTM-equivalent problem via put-call parity:
+# κ = |k|, cstar = OTM price, E = e^κ, invE = e^{-κ}. The k<0 branch subtracts
+# intrinsic value, which cancels catastrophically for near-parity ITM prices —
+# cstar is floored at 1e-300 so a slightly-negative rounding result cannot
+# reach log() in downstream seeds (the C reference floors likewise).
+@inline function _otm_reduce(k::Float64, c::Float64)
+    κ = abs(k)
+    ek = exp(k)
+    if k >= 0.0
+        return κ, max(c, 1e-300), ek, 1.0 / ek
+    else
+        invek = 1.0 / ek
+        return κ, max(invek * (c - 1.0 + ek), 1e-300), invek, ek
     end
-    return v + 3.0 * r * (2.0 - r * φ2) / denom, abs(f)
 end
 
-# --- public scalar solver ----------------------------------------------------
 # --- generic-interface adapter (monomorphized by the shared solver) ----------
+# hh_terms exploits the exact identity (d2 = d1 - v, d1·v - v²/2 = -κ):
+#   exp(-d2²/2) = exp(-d1²/2)·e^{-κ}
+# so the gaussian factor for d2 is free once d1's is known — one exp/iteration.
 struct BSCall <: QuantileProblem
     κ::Float64
     E::Float64       # e^{|k|}
     invE::Float64    # e^{-|k|}
 end
+BSCall(κ::Float64, E::Float64) = BSCall(κ, E, inv(E))
 @inline xlo(::BSCall) = 1e-10
 @inline xhi(::BSCall) = 5.0
 @inline seed(D::BSCall, cstar::Float64) = bs_seed(D.κ, cstar, D.E)
@@ -160,36 +155,29 @@ end
     return f, fp, φ2, ξ
 end
 
-# Build the problem and call the generic solver.
+# Build the problem and call the generic solver (residual test BEFORE each
+# update, so it stops one step earlier than bs_implied_vol: faster, ~4.6e-14).
 @inline function bs_implied_vol_generic(k::Float64, c::Float64; tol::Float64 = 1e-14)
-    κ = abs(k); ek = exp(k)
-    if k >= 0.0
-        cstar = c; E = ek; invE = 1.0 / ek
-    else
-        invek = 1.0 / ek
-        cstar = invek * (c - 1.0 + ek); E = invek; invE = ek
-    end
+    κ, cstar, E, invE = _otm_reduce(k, c)
     return solve(BSCall(κ, E, invE), cstar; tol = tol)
 end
 
+# Direct solver: residual test AFTER each update — spends one extra HH-4 step
+# relative to the generic path to land at the machine floor (~1.3e-15).
+# NaN inputs propagate to a NaN result (standard poisoning semantics).
 @inline function bs_implied_vol(k::Float64, c::Float64; tol::Float64 = 1e-14, maxiter::Int = 8)
-    κ = abs(k)
-    ek = exp(k)
-    # OTM-equivalent price and prefactor E = exp(κ) = e^{|k|}
-    if k >= 0.0
-        cstar = c
-        E = ek
-        invE = 1.0 / ek
-    else
-        invek = 1.0 / ek
-        cstar = invek * (c - 1.0 + ek)
-        E = invek
-        invE = ek
-    end
+    κ, cstar, E, invE = _otm_reduce(k, c)
+    D = BSCall(κ, E, invE)
     v = bs_seed(κ, cstar, E)
     @inbounds for _ in 1:maxiter
-        v, af = hh4_step(κ, cstar, v, E, invE)
-        af < tol && break
+        f, fp, φ2, ξ = hh_terms(D, v, cstar)
+        fp <= 1e-306 && break            # vega underflow: r would be Inf/NaN
+        r = f / fp
+        denom = -6.0 + r * (6.0 * φ2 - r * ξ)
+        vn = abs(denom) < 1e-20 ? v - r : v + 3.0 * r * (2.0 - r * φ2) / denom
+        (isfinite(vn) && vn > 1e-10 && vn < 5.0) || break
+        v = vn
+        abs(f) < tol && break
     end
     return v
 end
@@ -202,40 +190,31 @@ end
 # since the adaptive loop spends ~0.8 of its ~2.8 residual evaluations merely
 # *proving* convergence.
 #
-# Accuracy follows from quartic convergence alone: a seed with relative error δ
-# lands at δ^(4^N). The worst seed on the reference grid is δ ≈ 0.211, so
-#     N = 2  ->  δ^16 ≈ 1.5e-11   (measured 2.9e-11)
-#     N = 3  ->  δ^64 ≈ 0         (measured 1.3e-15, the machine floor)
-# Use Val(2) as a fast mode (~1e-11) and Val(3) for full precision (~1e-15).
+# VALIDITY DOMAIN — narrower than the adaptive solvers. With no residual test,
+# accuracy rests entirely on quartic convergence from the seed: relative seed
+# error δ lands at δ^(4^N). Over a dense sweep of delta ∈ [0.05, 0.95],
+# vol ∈ [0.01, 2.0] (144k points, worst off-node seed δ ≈ 0.33):
+#     N = 2  ->  max |Δv| = 2.3e-8    (δ^16; on grid nodes alone: 2.9e-11)
+#     N = 3  ->  max |Δv| = 1.6e-15   (δ^64 -> machine floor, entire region)
+# OUTSIDE that delta band the seed can leave the convergence basin and errors
+# grow to percent level with no error signal — use the adaptive bs_implied_vol
+# for deep-OTM (sub-5-delta) inputs. Results are clamped to v ∈ [1e-10, 5.0]
+# (same domain the C reference enforces); NaN inputs propagate to NaN output.
 #
 # NOTE: the *iteration* is branch-free, but `bs_seed` still branches on regime
 # and the Cody `erfc` still branches on |d| range. Both must be bucketed or
 # blended before this can actually be vectorized.
 @inline function bs_implied_vol_fixed(k::Float64, c::Float64, ::Val{N} = Val(3)) where {N}
-    κ = abs(k)
-    ek = exp(k)
-    if k >= 0.0
-        cstar = c; E = ek; invE = 1.0 / ek
-    else
-        invek = 1.0 / ek
-        cstar = invek * (c - 1.0 + ek); E = invek; invE = ek
-    end
+    κ, cstar, E, invE = _otm_reduce(k, c)
+    D = BSCall(κ, E, invE)
     v = bs_seed(κ, cstar, E)
     @inbounds for _ in 1:N
-        invv = 1.0 / v
-        d1 = -κ * invv + 0.5 * v
-        d2 = d1 - v
-        Φ1, fp = normcdf_pdf(d1)
-        g2 = fp * SQRT2PI * invE          # exp(-d2²/2), free via the identity
-        f = Φ1 - E * normcdf_withg(d2, g2) - cstar
+        f, fp, φ2, ξ = hh_terms(D, v, cstar)
         r = f / fp
-        d1d2 = d1 * d2
-        φ2 = d1d2 * invv
-        ξ = (d1d2 * d1d2 - (d1 * d1 + d2 * d2) - d1d2) * invv * invv
         denom = -6.0 + r * (6.0 * φ2 - r * ξ)
         vn = v + 3.0 * r * (2.0 - r * φ2) / denom
         vn = ifelse(abs(denom) < 1e-20, v - r, vn)   # Newton fallback (branchless)
-        vn = ifelse(isfinite(vn), vn, v)             # NaN/Inf guard (branchless)
+        vn = ifelse(isfinite(vn), vn, v)             # non-finite update -> stay (branchless)
         v = clamp(vn, 1e-10, 5.0)                    # bounds (min/max, branchless)
     end
     return v

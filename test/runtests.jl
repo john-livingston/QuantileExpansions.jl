@@ -4,22 +4,38 @@ using Test
 import Distributions
 import SpecialFunctions: erfinv, gamma_inc, beta_inc
 
+# The paper's 328-point delta-constrained grid, shared by every BS testset:
+# (k, c, v_true) triples over vols {0.01, 0.05..2.0} x deltas {0.05..0.95}.
+function paper_grid()
+    vols = vcat(0.01, collect(0.05:0.05:2.0))
+    deltas = [0.05, 0.20, 0.30, 0.45, 0.55, 0.70, 0.80, 0.95]
+    pts = Tuple{Float64,Float64,Float64}[]
+    for v in vols, D in deltas
+        k = v*(0.5v - sqrt(2)*erfinv(2D-1)); d1 = -k/v+0.5v; d2 = d1-v
+        push!(pts, (k, normcdf(d1) - exp(k)*normcdf(d2), v))
+    end
+    return pts
+end
+
 @testset "special functions" begin
     import SpecialFunctions
     for x in range(-10, 10, length=2001)
         @test normcdf(x) ≈ 0.5*SpecialFunctions.erfc(-x/sqrt(2)) atol=1e-15 rtol=1e-13
+        # internal exp-reuse helper must agree with normcdf given the true g
+        @test QuantileExpansions.normcdf_withg(x, exp(-0.5x^2)) ≈ normcdf(x) atol=1e-15 rtol=1e-13
     end
     for y in range(0, 50, length=2001)
         @test erfcx_pos(y) ≈ SpecialFunctions.erfcx(y) rtol=1e-13
     end
+    # out-of-domain guard (near-parity ITM cancellation): finite, no DomainError
+    @test norminv(0.0) == -38.0
+    @test norminv(-2.3e-15) == -38.0
+    @test norminv(1.0) == 38.0
 end
 
 @testset "BS-IV round trip (paper grid)" begin
-    vols = vcat(0.01, collect(0.05:0.05:2.0)); deltas = [0.05,0.20,0.30,0.45,0.55,0.70,0.80,0.95]
     maxerr = 0.0
-    for v in vols, D in deltas
-        k = v*(0.5v - sqrt(2)*erfinv(2D-1)); d1=-k/v+0.5v; d2=d1-v
-        c = normcdf(d1) - exp(k)*normcdf(d2)
+    for (k, c, v) in paper_grid()
         maxerr = max(maxerr, abs(bs_implied_vol(k,c) - v))
         maxerr = max(maxerr, abs(bs_implied_vol_generic(k,c) - v))
     end
@@ -27,20 +43,32 @@ end
 end
 
 @testset "branch-free fixed-step BS kernel" begin
-    vols = vcat(0.01, collect(0.05:0.05:2.0)); deltas = [0.05,0.20,0.30,0.45,0.55,0.70,0.80,0.95]
     e2 = 0.0; e3 = 0.0
-    for v in vols, D in deltas
-        k = v*(0.5v - sqrt(2)*erfinv(2D-1)); d1 = -k/v+0.5v; d2 = d1-v
-        c = normcdf(d1) - exp(k)*normcdf(d2)
+    for (k, c, v) in paper_grid()
         e2 = max(e2, abs(bs_implied_vol_fixed(k, c, Val(2)) - v))
         e3 = max(e3, abs(bs_implied_vol_fixed(k, c, Val(3)) - v))
     end
-    # quartic convergence: worst seed δ≈0.211 ⇒ δ^16 ≈ 1.5e-11 after 2 steps,
-    # δ^64 ⇒ machine floor after 3.
-    @test e2 < 1e-9
-    @test e3 < 1e-13
+    # Quartic convergence from the seed: worst grid-node seed δ≈0.211 ⇒
+    # δ^16 ≈ 1.5e-11 after 2 steps, δ^64 ⇒ machine floor after 3.
+    # Bounds guard the published grid figures (2.9e-11 / 1.3e-15) with ~3x
+    # headroom for cross-platform FP differences.
+    @test e2 < 1e-10
+    @test e3 < 5e-15
     @test bs_implied_vol_fixed(0.1, 0.06) == bs_implied_vol_fixed(0.1, 0.06, Val(3))  # default
     @test (@allocated bs_implied_vol_fixed(0.1, 0.06, Val(2))) == 0
+end
+
+@testset "near-parity ITM prices do not throw (regression)" begin
+    # bs price at k=-4, v=0.005: cstar rounds to -2.3e-15 via cancellation;
+    # previously norminv(log of negative) threw DomainError.
+    k = -4.0
+    c = 0.9816843611112658
+    for f in (bs_implied_vol, bs_implied_vol_generic,
+              (k,c) -> bs_implied_vol_fixed(k, c, Val(2)),
+              (k,c) -> bs_implied_vol_fixed(k, c, Val(3)))
+        v = f(k, c)
+        @test isfinite(v) && v >= 1e-10
+    end
 end
 
 @testset "Gamma vs Distributions (forward residual)" begin
