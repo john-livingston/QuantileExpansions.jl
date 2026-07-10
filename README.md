@@ -9,6 +9,8 @@ allocation-free, C-speed code.
 
 Covers **Black–Scholes implied vol**, **Inverse Gaussian**, **Gamma**, and **Beta**.
 
+**📖 [Documentation](https://john-livingston.github.io/QuantileExpansions.jl/)** — guide, method, benchmarks, and API reference.
+
 ## Results
 
 Apple Silicon (10 performance cores), Julia 1.12, `-O3`. Identical grids and
