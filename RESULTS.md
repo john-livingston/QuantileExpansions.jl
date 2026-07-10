@@ -169,9 +169,33 @@ the authors' `κ > 0.5` guard: the deep/Mills seed is *worse* than P7 in that
 corner. The regime map of arXiv:2606.10245 is a genuine local optimum.
 
 Consequence: making `fixed-2` exact to 1e-14 needs the worst-case seed error cut
-from 33% (dense worst, at v≈0.76, delta≈0.08) to 13.3% — concentrated in the
-**low-delta edge of `mild-P7`**. That requires a better expansion there (P9/P11,
-or a small-`v` asymptotic seed), not a re-tuned boundary.
+from 33% (dense worst, at v≈0.76, delta≈0.08) to 13.3%. Follow-up experiments
+sharpened where that worst error comes from and what does/doesn't fix it:
+
+- **Higher-order surrogates fail outright.** P9 (one or two Newton steps)
+  explodes to δ ~ 10³: the odd Taylor polynomial of Φ diverges outside its
+  radius, and degree 9 diverges harder than 7 — sharper inside, wilder outside.
+  A second Newton step on P7 is also *worse* (δ 0.34 → 0.83): the avg(P3,P7)
+  band works by truncation-error *cancellation* (P3 undershoots, P7 overshoots),
+  which iterating toward either surrogate's own root destroys.
+- **The real defect is dispatch, not the seeds.** At the dense worst point
+  (κ≈1.29, cstar≈0.021), the P1 seed (δ=0.023) and Mills seed (δ=0.047) are both
+  good — the polynomial *Newton step* is what ruins it, because |d₂(v₁)| ≈ 2.2
+  is far outside the surrogate's truncation tolerance. Conversely at
+  (κ≈0.502, cstar≈0.0208) the tail filter (`κ>0.5 ∧ c*<0.02128`) misfires onto
+  the Mills seed (δ=0.24) when P7 would be near-exact (δ=0.006).
+- **A d₂-validity dispatch improves the worst case ~30% but hits a floor.**
+  Routing on |d₂(v₁)| > 1.8 (the truncation variable itself, rather than the
+  (κ, c*) proxies) gives dense worst δ = **0.231** — i.e. fixed-2 dense error
+  ~6.6e-11, a ~350× accuracy gain at equal speed — but three independent
+  refinements all converge to the same ~0.23 floor: in the low-delta low-vol
+  corners *no* closed-form candidate (P1/P3/P7/avg/Mills/ATM) is better than
+  ~0.23. Passing δ* = 0.133 there needs new mathematics (e.g. Schadner's
+  variance-space coordinates), not dispatch tuning.
+
+The d₂-dispatch variant is left unlanded (fixed-3 already reaches 1.6e-15, so
+fixed-2 precision is not currently load-bearing); constants above pin it down
+if it becomes worth landing.
 
 ## Accuracy notes
 
