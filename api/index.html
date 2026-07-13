@@ -1198,7 +1198,7 @@ typical grids.</p>
 <h3 id="bs_implied_vol_fixedk-c-valnval3-v"><code>bs_implied_vol_fixed(k, c, Val(N)=Val(3)) -&gt; v</code><a class="headerlink" href="#bs_implied_vol_fixedk-c-valnval3-v" title="Permanent link">&para;</a></h3>
 <p>Branch-free, exactly <code>N</code> HH-4 updates, <strong>no convergence test</strong>. Valid for
 delta ∈ [0.05, 0.95], vol ∈ [0.01, 2.0]: <code>Val(3)</code> → ~1.6e-15, <code>Val(2)</code> →
-~2.3e-8 there. Outside that band errors grow with no signal — use the adaptive
+~4.7e-11 there. Outside that band errors grow with no signal — use the adaptive
 solvers. Results clamp to v ∈ [1e-10, 5].</p>
 <h3 id="bs_implied_vol_fixed_batchout-ks-cs-valn-valw-vector_seed-ws"><code>bs_implied_vol_fixed_batch!(out, ks, cs, Val(N), Val(W); vector_seed, ws)</code><a class="headerlink" href="#bs_implied_vol_fixed_batchout-ks-cs-valn-valw-vector_seed-ws" title="Permanent link">&para;</a></h3>
 <p>SIMD batch (<code>W</code> lanes; 8 recommended). <code>vector_seed=true</code> (x86 default) runs
