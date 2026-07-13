@@ -136,6 +136,41 @@ end
     @test (@allocated gamma_quantile_log(5.0, 0.3)) == 0
 end
 
+@testset "Gamma fast semi-analytic (ODE5 seed-only)" begin
+    # exact closed-form branches match the full solver exactly
+    @test gamma_quantile_fast(1.0, 0.3) == -log1p(-0.3)
+    @test gamma_quantile_fast(0.5, 0.7) ≈ Distributions.quantile(Distributions.Gamma(0.5,1.0), 0.7) rtol=1e-7
+    # seed-only central band (|z| <= 2.5): documented semi-analytic accuracy,
+    # ~1e-5 at a=10 improving as a^-1.85 (NOT machine precision by design)
+    for (a, bnd) in ((10.0,2e-5),(25.0,6e-6),(50.0,2e-6),(100.0,5e-7),(500.0,4e-8))
+        G = Distributions.Gamma(a,1.0); e = 0.0
+        for u in range(0.007, 0.993, length=2000)
+            e = max(e, abs(log(gamma_quantile_fast(a,u)) - log(Distributions.quantile(G,u))))
+        end
+        @test e < bnd
+    end
+    # full-range fast result stays within the semi-analytic tolerance everywhere
+    for (a, bnd) in ((2.0,1e-5),(5.0,1e-5),(50.0,5e-6))
+        G = Distributions.Gamma(a,1.0); e = 0.0
+        for u in range(1e-6, 1-1e-6, length=3000)
+            xr = Distributions.quantile(G,u); x = gamma_quantile_fast(a,u)
+            (xr > 0 && x > 0) && (e = max(e, abs(log(x)-log(xr))))
+        end
+        @test e < bnd
+    end
+    # batch is bit-for-bit identical to the scalar function
+    ps = collect(range(1e-6, 1-1e-6, length=257)); pout = similar(ps)
+    for a in (0.5, 1.0, 0.75, 2.0, 5.0, 50.0, 500.0)
+        gamma_quantile_fast_batch!(pout, a, ps)
+        @test all(pout[i] === gamma_quantile_fast(a, ps[i]) for i in eachindex(ps))
+    end
+    # deep-upper fallback is the exact GammaLogQ solver, bit-for-bit
+    for a in (2.0, 5.0, 50.0), u in (1-1e-6, 1-1e-7, 1-1e-8)
+        @test gamma_quantile_fast(a, u) == gamma_quantile_log(a, u)
+    end
+    @test (@allocated gamma_quantile_fast_batch!(pout, 50.0, ps)) == 0
+end
+
 @testset "Beta logit-space solver" begin
     # exact closed-form branches
     @test beta_quantile_logit(100.0, 1.0, 1e-8) ≈ (1e-8)^(1/100) rtol=1e-15
