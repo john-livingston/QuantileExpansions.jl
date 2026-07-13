@@ -604,3 +604,73 @@ kernel already evaluates every regime candidate (including the two `norminv_bf`)
 on every lane, so shifting the *selection* toward Mills changes nothing. This is
 the honest cost of the 570× fast-mode accuracy gain: it is not free on the
 scalar path, but it is free where it is used at scale.
+
+### Stage 2 — variance coordinates and the corner floor (negative, with a map)
+
+Goal: break the seed-δ floor so `fixed-2` becomes dense-exact (δ ≤ δ* = 0.133).
+The result is negative, but the investigation relocated the floor and corrected
+the earlier "no candidate beats ~0.23 in the corner" claim.
+
+**Where the floor actually is.** The dense worst *seed* δ (0.228) sits at high
+vol (κ ≈ 1.21, v = 2.0), but that point has a tiny K4 constant, so it barely
+contributes to `fixed-2` error. The `fixed-2` *error* is instead pinned by a
+low-vol point (D = 0.05, v = 0.268, κ = 0.478, c* = 0.0051), and there the
+dispatch picks P7 (δ = 0.216) even though **P1 (δ = 0.112) and Mills (δ = 0.132)
+both pass δ***. So the corner is dispatch-limited, not floor-limited: an oracle
+that picks the best of {P1, P3, P7, avg, Mills, ATM} per point reaches corner
+(vol < 0.4) worst δ = **0.116**, comfortably under δ*.
+
+**The true residual floor is at high vol.** The same oracle, taken over the
+whole sweep, still cannot beat δ = **0.189** at (κ ≈ 1.38, v = 2.0, c* ≈ 0.44) —
+there *no* candidate is better. Feeding the oracle seed into `fixed-2` gives a
+dense error of **4.8e-14**: even perfect per-point dispatch does not make
+`fixed-2` dense-exact, because 0.189¹⁶·K4 lands at ~5e-14. That 4.8e-14 is the
+hard ceiling for this candidate set; the current landed 4.7e-11 is ~1000× above
+it, and the entire gap is dispatch entanglement, not seed quality.
+
+**Variance-coordinate candidates (w = v²), replacing the Mills seed in the
+routed band unless noted:**
+
+| candidate                              | worst δ | corner δ | fixed-2 dense |
+|----------------------------------------|--------:|---------:|--------------:|
+| Mills (current landed)                 | 0.228   | 0.216    | 4.7e-11       |
+| cf_w1: κ²/(2w) = −ln c*                 | 0.538   | 0.494    | 2.9e-3        |
+| cf_w2: κ²/(2w) = −ln c* + κ/2           | 0.592   | 0.511    | 5.3e-3        |
+| cf_w3: fixed-point incl. −w/8 + prefactor | 0.979 | 0.352    | 1.8e-2        |
+| log-price Newton in w (one price eval) | 0.216   | 0.216    | 4.7e-11       |
+| oracle (best per point, cheating)      | 0.189   | 0.116    | 4.8e-14       |
+
+The closed-form variance seeds derive from the Mills asymptotic
+`ln c* ≈ −κ²/(2w) + κ/2 − w/8 − ln(√(2π)(κ²/w − w/4)/v)` (using the exact
+identity `e^κ φ(d2) = φ(d1)`), which is nearly linear in `1/w` deep in the tail.
+But the `fixed-2`-binding corner is only *moderately* OTM (c* ≈ 5e-3, not tiny),
+where the neglected prefactor and `1/d²` Mills terms dominate; the leading-order
+inversions are off by 50–100%. The log-price Newton step — the recipe meant to
+linearize the deep-tail exponential — does converge nicely where c is genuinely
+tiny, but the binding points are P7-routed, not tail-routed, so it moves worst δ
+only 0.228 → 0.216 and leaves `fixed-2` unchanged; and since a seed that spends a
+price evaluation costs ~one HH-4 step, seed + `fixed-2` ≈ `fixed-3` cost, and
+`fixed-3` is already machine-exact everywhere. So the w-Newton has no practical
+lever.
+
+**Why the dispatch gain is not cheaply reachable.** The oracle's 1000× headroom
+needs a per-point selector between P1, P7 and Mills. But the candidate-optimal
+regions are entangled in exactly the coordinates a cheap seed can test: routing
+the poly band to the (free) P1 seed on `|d2(v1)| ∈ (D2_LO, 1.75]` blows `fixed-2`
+up to 3e-5, because a high-vol high-κ point (κ ≈ 1.10, v ≈ 1.55) lands in the
+same `|d2(v1)|` band with P1 δ = 0.47; adding a low-vol gate `v1 < V_LO` still
+leaks P1 into a mid-vol strip (κ ≈ 0.5–0.7, v ≈ 0.5–0.9) and degrades `fixed-2`
+to 1e-8…1e-6. No single- or two-parameter rule over (κ, c*, v1, |d2(v1)|)
+separates "P1-good corner" from "P1-bad elsewhere" — consistent with the earlier
+finding that the arXiv regime map is a genuine local optimum. Selecting on the
+actual price residual would work but costs one price evaluation per candidate,
+i.e. more than `fixed-3`.
+
+**Verdict.** Stage 2 is negative: variance coordinates do not yield a cheaper
+`fixed-2`-exact seed. The refined understanding is the deliverable — the corner
+is dispatch-limited (oracle δ = 0.116, not a 0.23 floor), the genuine seed floor
+is δ = 0.189 at high vol (a hard 4.8e-14 `fixed-2` ceiling for this candidate
+set), and no cheap selector realizes the gap. Breaking it needs either a new
+high-vol seed family (to lower the 0.189 floor) or a cost-free residual proxy for
+per-point selection — neither delivered by the w-coordinate recipes tried here.
+The landed Stage-1 dispatch (4.7e-11, ~570× over baseline) stands as the win.
