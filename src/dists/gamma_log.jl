@@ -141,8 +141,16 @@ end
 """
     gamma_quantile_log(a, u; tol=1e-14)
 
-Gamma(shape `a`, scale 1) quantile via the log-space regime-split solver
-(port of A. Hekimoglu's C engine). Exact closed forms for `a = 1` and `a = ½`.
+Gamma(shape `a`, scale 1) quantile. For `a < 20` this is the log-space
+regime-split solver (port of A. Hekimoglu's C engine); for `a >= 20` it routes
+through the fixed-order Temme CDF, uniformly ~1e-14 and unbiased near `x = a`
+where `SpecialFunctions.gamma_inc` carries a localized ~2e-6 defect (RESULTS.md).
+Exact closed forms for `a = 1` and `a = ½`.
+
+Accuracy/speed alternatives for `a >= 20`: [`gamma_quantile_batch_simd!`]
+(~60 ns/q, same accuracy, bulk) and [`gamma_quantile_fast`] (~6 ns/q, ~1e-5, an
+opt-in fast mode). The old `gamma_inc` path stays reachable via the exported
+`exp(solve(GammaLogQ(a), u))` if bit-compatibility with `Distributions` is needed.
 """
 @inline function gamma_quantile_log(a::Float64, u::Float64; tol::Float64 = 1e-14)
     u <= 0.0 && return 0.0

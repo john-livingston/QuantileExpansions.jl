@@ -473,6 +473,17 @@ solver against `Distributions.quantile`, which shares the same `gamma_inc` bias
 is 8 to 9 orders of magnitude more accurate than the scalar/library path for `a≥30`**.
 This alone makes the kernel worth landing, independent of any SIMD speedup.
 
+Because of that defect, the scalar `gamma_quantile_log` / `_cert` /
+`gamma_quantile_batch!` route through this Temme CDF for `a >= 20`, so the
+default path is unbiased near `x = a`. Amortized this costs ~262 ns/q flat vs
+~207 ns for the old `gamma_inc` solve at `a >= 50` (about 25% slower, spent on
+the spike fix plus branch-free uniformity) and is ~15% faster at `a = 20` where
+`gamma_inc`'s series near `x = a` is expensive. The scalar speed is immaterial
+for one-off calls; bulk workloads should use the SIMD batch (~60 ns/q, same
+accuracy). This makes the accuracy correct-by-default while `gamma_quantile_fast`
+(~6 ns/q, ~1e-5) and `exp(solve(GammaLogQ(a), u))` (the `gamma_inc` path) remain
+explicit opt-ins.
+
 ### Timing
 
 `bench/bench_gamma_simd.jl`, ns per quantile, 16384-point `u` grid, single thread,
