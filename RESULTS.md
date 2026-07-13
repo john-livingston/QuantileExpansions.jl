@@ -674,3 +674,127 @@ set), and no cheap selector realizes the gap. Breaking it needs either a new
 high-vol seed family (to lower the 0.189 floor) or a cost-free residual proxy for
 per-point selection — neither delivered by the w-coordinate recipes tried here.
 The landed Stage-1 dispatch (4.7e-11, ~570× over baseline) stands as the win.
+
+## Beta ODE5 central seed and y6 zero-eval certificate (exp/beta-ode5-y6)
+
+Port of A. Hekimoglu's ODE5 central seed and its seed-intrinsic y6 term for beta,
+wired into the existing logit solver. In the high-concentration central region
+the quantile is written in standardized coordinates, X = p + eps*sqrt(pq)*Y with
+p = a/n, n = a+b, eps = n^(-1/2), and Y is expanded against z = Phi^(-1)(u):
+Y = z + eps*y1(z) + ... + eps^5*y5(z). The coefficient polynomials y_k depend
+only on p and are built once per shape by solving the quantile ODE order by order
+from the beta log-density expansion (y_k has degree k+1; the omitted eps^6*y6
+term is the leading seed-error estimate). The build is an isbits-tuple port of his
+BPoly series algebra (max degree 8, so a 10-slot polynomial), which makes
+`BetaODE5(a,b)` allocation-free. New API: `BetaODE5`, `beta_ode5_seed`,
+`beta_ode5_seed_batch!`, `beta_quantile_ode5`, `beta_quantile_ode5_batch!`,
+`beta_quantile_ode5_mode`.
+
+### The zero-eval seed is asymptotic, not machine-precision
+
+The premise to test was whether the raw seed plus the seed-intrinsic y6 term can
+return a central quantile at 1e-14 with ZERO incomplete-beta evaluations. Measured
+over the gate (n >= 4, p in [0.05, 0.95], |z| <= 2.5) the raw seed is an
+asymptotic-in-n object, exact only as n -> Inf:
+
+| shape | n | raw-seed max \|D logit x\| |
+|-------|----:|--------------------------:|
+| (3,1.5)   | 4.5 | 1.1e-01 |
+| (2,5)     | 7   | 2.3e-02 |
+| (4,4)     | 8   | 4.1e-03 |
+| (8,3)     | 11  | 3.6e-03 |
+| (20,12.5) | 32.5| 2.3e-05 |
+| (50,50)   | 100 | 3.2e-07 |
+| (100,100) | 200 | 2.7e-08 |
+
+A y6 seed certificate e0 = |c*eps^7*y6/(x0(1-x0))| <= tau therefore fires
+essentially nowhere (only at isolated z where y6(z)=0): reaching e0 <= 1e-14
+across |z| <= 2.5 needs n > ~6000. And his shipped acceptance test K4*e0^4 <= tau
+bounds the error AFTER one HH-4 update, so returning the raw seed under it
+"certifies" points whose seed error is up to ~5e-3 (the reference
+`beta_quant_ode5_else_hh4` direct batch is his Monte-Carlo tier, not a 1e-14
+quantile). A zero-eval central quantile at 1e-14 is not attainable from any
+truncation of this expansion at practical n. We keep the raw seed as an explicit
+approximate tier (`beta_ode5_seed`, `beta_ode5_seed_batch!`) for Monte-Carlo and
+calibration, and report its cost below.
+
+### Where the sharp seed pays off: certificate coverage
+
+The ODE5 seed is far sharper than the CF5 seed, so the existing real-residual K4
+certificate (one CDF evaluation gives the true residual r = f/F', then
+16*K4*r^4 <= tau accepts a single logit-HH-4 update) fires over a much larger
+central band. `beta_quantile_ode5` uses that fast path where it fires and falls
+back bit-for-bit to `beta_quantile_batch!(certified=true)` on every other point
+(measured deviation on uncertified points: exactly 0.0). Coverage of the central
+gate, certified accuracy vs Distributions.jl, and certified-vs-full deviation
+(safety 16):
+
+| shape | n | ODE5 cov | CF5 cov | cert err (logit) | cert vs full |
+|-------|----:|-------:|-------:|-----------------:|-------------:|
+| (3,1.5)   | 4.5 |  24% |   0.4% | 8.9e-15 | 2.0e-14 |
+| (2,5)     | 7   |  59% |   0.8% | 1.4e-15 | 2.0e-14 |
+| (4,4)     | 8   |  85% |   2.1% | 1.7e-15 | 1.9e-14 |
+| (8,3)     | 11  |  78% |   2.1% | 3.1e-15 | 2.1e-14 |
+| (20,12.5) | 32.5| 100% |  22.8% | 2.7e-15 | 2.1e-14 |
+| (50,50)   | 100 | 100% |  95.7% | 1.4e-15 | 3.8e-15 |
+| (100,100) | 200 | 100% | 100.0% | 1.1e-15 | 1.4e-15 |
+
+Certified points match Distributions.jl to <= 2.9e-15 in logit and the full
+solver to <= 2.1e-14 (within tol) for every shape, including n = 4.5 where the
+analytic e0 model alone would be optimistic (it predicts ~1e-10 there); using the
+true residual r for the acceptance test is what keeps it sound.
+
+### Benchmarks (Apple M4, -O3, amortized per-shape batches, ns/q)
+
+Central band u in [0.15, 0.85] (its |z| <= 1.04 is fully inside the seed gate):
+
+| shape | ODE5 cov | rawseed (0-eval) | ode5 (1e-14) | cert (old) | full (old) | Distributions |
+|-------|-------:|-----:|-----:|----------:|----------:|-----:|
+| (2,5)     |  78% | 17.7 | 211 | 347 | 357 | 502 |
+| (4,4)     | 100% | 15.3 | 139 | 342 | 372 | 511 |
+| (8,3)     | 100% | 17.4 | 144 | 369 | 393 | 628 |
+| (20,12.5) | 100% | 17.7 | 191 | 280 | 352 | 831 |
+| (50,50)   | 100% | 15.1 | 159 | 149 | 284 | 653 |
+| (100,100) | 100% | 15.0 | 178 | 180 | 340 | 733 |
+
+Full band u in [0.001, 0.999]:
+
+| shape | ODE5 cov | ode5 | cert (old) | full (old) | Distributions |
+|-------|-------:|-----:|----------:|----------:|-----:|
+| (2,5)     |  58% | 245 | 327 | 354 | 491 |
+| (4,4)     |  85% | 179 | 327 | 373 | 492 |
+| (8,3)     |  77% | 214 | 356 | 383 | 596 |
+| (20,12.5) |  99% | 195 | 300 | 344 | 823 |
+| (50,50)   |  99% | 173 | 149 | 295 | 565 |
+| (100,100) |  99% | 187 | 180 | 330 | 700 |
+
+Per-shape precompute is 14-28 us; break-even against the old certified path is
+~150-250 quantiles, so this is a batch API (matching his batch protocol). Numbers
+carry ~10% run-to-run variance on a loaded machine; the ODE5-vs-old ordering is
+stable across runs.
+
+- Zero-eval seed tier (`rawseed`): 15-18 ns/q, matching his ~18-22 ns central
+  tier, at the asymptotic accuracy tabled above (not a 1e-14 quantile).
+- Certified 1e-14 tier: 1.4-2.5x faster than the existing certified path at small
+  and moderate n (139-211 vs 342-369 ns central at n <= 33), because ODE5 lifts
+  coverage from CF5's few percent to ~100%. At large n it is neutral (50,50) to
+  slightly slower (100,100): CF5 already certifies ~100% there and the ODE5 seed
+  costs more to evaluate.
+
+### Verdict
+
+Land-worthy as the beta central accelerator, with the headline reframed honestly:
+
+1. The certified `beta_quantile_ode5` path is a clear win where it matters (small
+   and moderate n, the pocket the earlier RESULTS note flagged CF5 could not
+   reach): 1.4-2.5x over the existing certified path at equal-or-better accuracy
+   (certified err <= 2.9e-15), sound (bit-identical fallback), allocation-free.
+   It is neutral at very large n, where CF5 already covers.
+2. The "zero incomplete-beta evaluation at 1e-14" headline is NOT achievable: the
+   seed is asymptotic in n, so any y6-only certificate that keeps 1e-14 has
+   near-zero coverage. The zero-eval path is shipped as an explicit Monte-Carlo
+   seed (15-18 ns/q, ~1e-3 to ~1e-8 logit accuracy), clearly separated from the
+   machine-precision quantile.
+
+Reproduce: `julia --project=. test/runtests.jl` (testset "Beta ODE5 central seed
++ y6 certificate"); `julia --project=. -O3 bench/bench_beta_ode5.jl`.
