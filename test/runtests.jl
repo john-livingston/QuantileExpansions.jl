@@ -242,6 +242,55 @@ end
     @test (@allocated beta_quantile_logit_cert(2.0, 5.0, 0.4)) == 0
 end
 
+@testset "Beta ODE5 central seed + y6 certificate" begin
+    logit(x) = log(x) - log1p(-x)
+    shapes = ((2.0,5.0),(5.0,2.0),(4.0,4.0),(8.0,3.0),(20.0,12.5),(3.0,1.5),(100.0,100.0),(10.0,40.0))
+    us = collect(range(1e-6, 1-1e-6, length=6001))
+    certerr = 0.0; certvsfull = 0.0; totalcov = 0
+    for (a,b) in shapes
+        D = Distributions.Beta(a,b)
+        for u in us
+            m = beta_quantile_ode5_mode(a,b,u)
+            m == 0 && continue
+            totalcov += 1
+            x = beta_quantile_ode5(a,b,u)
+            xr = Distributions.quantile(D,u); (0<xr<1) || continue
+            xf = beta_quantile_logit(a,b,u)
+            (0<x<1) && (certerr = max(certerr, abs(logit(x)-logit(xr))))
+            (0<x<1 && 0<xf<1) && (certvsfull = max(certvsfull, abs(logit(x)-logit(xf))))
+        end
+    end
+    @test totalcov > 0                       # the fast path actually fires
+    @test certerr < 1e-13                    # certified region: <= 1e-13 vs reference
+    @test certvsfull < 1e-13                 # certified means within tol of the full solver
+
+    # uncertified points must be bit-for-bit the standard certified batch
+    ps = [1e-12,1e-8,1e-4,0.01,0.05,0.1,0.3,0.5,0.7,0.9,0.95,0.99,1-1e-4,1-1e-8,1-1e-12]
+    out5 = similar(ps); outb = similar(ps)
+    for (a,b) in ((2.0,5.0),(20.0,12.5),(3.0,1.5),(100.0,100.0),(0.75,2.0),(5.0,0.2))
+        beta_quantile_ode5_batch!(out5,a,b,ps)
+        beta_quantile_batch!(outb,a,b,ps; certified=true)
+        for i in eachindex(ps)
+            beta_quantile_ode5_mode(a,b,ps[i]) == 0 && @test out5[i] === outb[i]
+            @test beta_quantile_ode5(a,b,ps[i]) === out5[i]   # scalar == batch
+        end
+    end
+
+    # exact-form and non-central shapes route through the standard path
+    @test beta_quantile_ode5(100.0,1.0,1e-8) ≈ (1e-8)^(1/100) rtol=1e-15
+    @test beta_quantile_ode5(1.0,3.0,0.2) ≈ -expm1(log1p(-0.2)/3) rtol=1e-15
+    @test beta_quantile_ode5(0.5,0.5,0.3) ≈ sinpi(0.15)^2 rtol=1e-15
+    @test beta_quantile_ode5(0.75,2.0,0.4) === beta_quantile_logit(0.75,2.0,0.4)
+
+    # raw zero-eval seed is a valid interior seed (approximate, asymptotic in n)
+    @test 0.0 < beta_ode5_seed(20.0,12.5,0.4) < 1.0
+
+    @test (@allocated BetaODE5(20.0,12.5)) == 0
+    @test (@allocated beta_quantile_ode5(20.0,12.5,0.4)) == 0
+    @test (@allocated beta_quantile_ode5_batch!(out5,2.0,5.0,ps)) == 0
+    @test (@allocated beta_ode5_seed(20.0,12.5,0.4)) == 0
+end
+
 @testset "K4 certificates IG/BS" begin
     # same contract as the gamma/beta certificates: certified variants must be
     # bit-for-bit identical to the full solvers (the certificate may only skip

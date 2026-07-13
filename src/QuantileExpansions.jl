@@ -23,6 +23,7 @@ include("dists/gamma_log.jl")
 include("dists/gamma_simd.jl")
 include("dists/beta.jl")
 include("dists/beta_logit.jl")
+include("dists/beta_ode5.jl")
 
 # generic interface
 export QuantileProblem, solve, solve_certified, seed, hh_terms
@@ -33,5 +34,7 @@ export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_cert, bs_i
 export bs_implied_vol_fixed_batch!, bs_implied_vol_fixed_batch_threaded!, BSFixedWorkspace, vexp, vlog
 # other distributions
 export IGQ, ig_quantile, ig_quantile_cert, ig_quantile_batch!, ig_quantile_batch_threaded!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, gamma_quantile_batch!, GammaTemmeQ, gamma_quantile_batch_simd!, gamma_quantile_batch_simd_threaded!, GAMMA_SIMD_AMIN, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert, beta_quantile_batch!
+# Beta ODE5 central seed + y6 certificate
+export BetaODE5, beta_ode5_seed, beta_ode5_seed_batch!, beta_quantile_ode5, beta_quantile_ode5_batch!, beta_quantile_ode5_mode
 
 end # module
