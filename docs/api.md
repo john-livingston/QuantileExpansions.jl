@@ -24,7 +24,7 @@ typical grids.
 ### `bs_implied_vol_fixed(k, c, Val(N)=Val(3)) -> v`
 Branch-free, exactly `N` HH-4 updates, **no convergence test**. Valid for
 delta ∈ [0.05, 0.95], vol ∈ [0.01, 2.0]: `Val(3)` → ~1.6e-15, `Val(2)` →
-~2.3e-8 there. Outside that band errors grow with no signal — use the adaptive
+~4.7e-11 there. Outside that band errors grow with no signal — use the adaptive
 solvers. Results clamp to v ∈ [1e-10, 5].
 
 ### `bs_implied_vol_fixed_batch!(out, ks, cs, Val(N), Val(W); vector_seed, ws)`

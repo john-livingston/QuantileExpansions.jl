@@ -22,7 +22,7 @@ standard C/Rmath algorithms), and vs the paper authors' own C kernel for BS-IV
 |-------------------|-------------:|----------------------|--------:|-------------------|
 | Black–Scholes IV  |   ~69 ns/IV  | C kernel: ~110 ns/IV | **1.6×**| max \|Δv\| 8.9e-14 |
 | BS-IV (threaded)  |  ~8.2 ns/IV  | Numba: 24 ns (12t)   | 2.9×    | —                 |
-| BS-IV fast mode²  |   ~52 ns/IV  | C kernel: ~110 ns/IV | **2.1×**| max \|Δv\| 2.3e-8 |
+| BS-IV fast mode²  |   ~54 ns/IV  | C kernel: ~110 ns/IV | **2.0×**| max \|Δv\| 4.7e-11 |
 | BS-IV fast (thr.) |  ~6.3 ns/IV  | Numba: 24 ns (12t)   | 3.8×    | —                 |
 
 ¹ Worst case over a **dense** sweep of delta ∈ [0.05, 0.95] × vol ∈ [0.01, 2.0]
@@ -52,7 +52,7 @@ max error, single-threaded. See [`RESULTS.md`](RESULTS.md) for the full writeup.
 include("src/QuantileExpansions.jl"); using .QuantileExpansions
 
 bs_implied_vol(0.1, 0.06)              # Black–Scholes implied total vol from (log-moneyness, price)
-bs_implied_vol_fixed(0.1, 0.06, Val(2))  # branch-free fast mode (~1e-8 in the 5–95 delta band)
+bs_implied_vol_fixed(0.1, 0.06, Val(2))  # branch-free fast mode (~5e-11 in the 5–95 delta band)
 ig_quantile(1.0, 3.0, 0.7)             # Inverse Gaussian quantile (μ, λ, p)
 gamma_quantile_log(2.5, 0.4)           # Gamma quantile (shape a, p)
 beta_quantile_logit(2.0, 5.0, 0.4)     # Beta quantile (a, b, p)

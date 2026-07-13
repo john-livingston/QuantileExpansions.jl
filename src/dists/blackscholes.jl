@@ -10,8 +10,11 @@ const Κ1 = 0.001
 const Κ2 = 0.81
 const Κ3 = 1.155
 const Κ4 = 1.347
-const CSTAR_TAIL = 0.02128
-const KSTAR_TAIL = 0.5
+# Truncation-validity boundary for the odd-polynomial CDF surrogate: the P3/P7
+# Newton step is trustworthy only while its argument |d2(v1)| stays inside the
+# series radius. Past this the polynomial diverges from the true seed and the
+# Mills seed is used instead (replaces the earlier (κ, c*)-proxy tail filter).
+const D2_VALID = 1.75
 const A1 = INV_SQRT2PI   # 1/√(2π)
 
 # --- forward price (OTM call form, κ ≥ 0) -----------------------------------
@@ -87,23 +90,23 @@ end
 # --- regime dispatch: returns the seed v0 ------------------------------------
 @inline function bs_seed(κ::Float64, cstar::Float64, E::Float64)
     vatm = seed_atm(cstar)
-    # tail-filter override
-    if cstar < CSTAR_TAIL && κ > KSTAR_TAIL
-        return seed_deep(κ, cstar)
+    κ < Κ1 && return vatm
+    v1 = seed_p1(κ, cstar)
+    # d2 at the P1 seed is the polynomial surrogate's truncation variable; past
+    # D2_VALID the Newton step on P3/P7 leaves the series' basin (this is what
+    # ruins the low-vol corner), so dispatch to the Mills seed on |d2(v1)|.
+    d2v1 = -κ / v1 - 0.5 * v1
+    if abs(d2v1) > D2_VALID
+        return max(seed_deep(κ, cstar), vatm)
     end
-    if κ < Κ1
-        return vatm
-    elseif κ <= Κ2
-        v1 = seed_p1(κ, cstar)
+    if κ <= Κ2
         v7 = seed_poly(κ, cstar, v1, E, Val(7))
         return max(v7, vatm)
     elseif κ <= Κ3
-        v1 = seed_p1(κ, cstar)
         v3 = seed_poly(κ, cstar, v1, E, Val(3))
         v7 = seed_poly(κ, cstar, v1, E, Val(7))
         return max(0.5 * (v3 + v7), vatm)
     elseif κ <= Κ4
-        v1 = seed_p1(κ, cstar)
         v3 = seed_poly(κ, cstar, v1, E, Val(3))
         return max(v3, vatm)
     else

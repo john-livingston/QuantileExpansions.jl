@@ -16,7 +16,7 @@ grid-node maxima understate off-node error.
 | kernel | 1 thread | 10 threads × SIMD | accuracy (dense) |
 |---|---:|---:|---:|
 | adaptive (`bs_implied_vol_generic`) | 69.1 ns | 8.2 ns | 8.9e-14 |
-| fixed-2 fast mode | 51.9 ns | **3.6 ns** | 2.3e-8 |
+| fixed-2 fast mode | 54.0 ns | **3.6 ns** | 4.7e-11 |
 | fixed-3 full precision | 78.7 ns | **4.8 ns** | 1.6e-15 |
 | SIMD batch fixed-3 (W=8, serial) | 44.6 ns | — | 1.6e-15 |
 

@@ -82,16 +82,17 @@ cost and the iteration-count divergence between inputs — the property SIMD nee
 | kernel   | serial ns/IV | threaded (10t) | max abs err (dense) | (grid nodes) |
 |----------|-------------:|---------------:|--------------------:|-------------:|
 | adaptive |         69.1 |            8.2 |             8.9e-14 |      4.6e-14 |
-| fixed-2  |     **~52**  |        **6.3** |          **2.3e-8** |      2.9e-11 |
+| fixed-2  |     **~54**  |        **6.3** |         **4.7e-11** |      2.9e-11 |
 | fixed-3  |         ~79  |              — |             1.6e-15 |      1.3e-15 |
 
 Accuracy follows from quartic convergence alone: a seed with relative error `δ`
 lands at `δ^(4^N)`. The 328 grid *nodes* understate this badly: the worst node
-seed has `δ ≈ 0.211`, but a dense sweep between nodes finds `δ ≈ 0.33` (at
-v≈0.76, delta≈0.08), and `0.33¹⁶ ≈ 2.5e-8` — matching the measured dense
-fixed-2 error of 2.3e-8. Three steps give `δ⁶⁴ ≈ 0`, i.e. the machine floor
-across the entire region, so **fixed-3 is a safe branch-free default; fixed-2
-is a ~1e-8 fast mode**.
+seed has `δ ≈ 0.211`, but a dense sweep between nodes finds `δ ≈ 0.23` after the
+d2-validity dispatch (below; `δ ≈ 0.34` before it, which gave the earlier
+`2.3e-8` figure), and `0.23¹⁶ ≈ 7e-11` — near the measured dense fixed-2 error
+of 4.7e-11. Three steps give `δ⁶⁴ ≈ 0`, i.e. the machine floor across the
+entire region, so **fixed-3 is a safe branch-free default; fixed-2 is a
+~5e-11 fast mode** (see the closing section for the dispatch that landed this).
 
 **Validity domain.** These figures hold for delta ∈ [0.05, 0.95],
 vol ∈ [0.01, 2.0]. Outside the delta band the seed can leave the quartic
@@ -358,9 +359,9 @@ sharpened where that worst error comes from and what does/doesn't fix it:
   ~0.23. Passing δ* = 0.133 there needs new mathematics (e.g. Schadner's
   variance-space coordinates), not dispatch tuning.
 
-The d₂-dispatch variant is left unlanded (fixed-3 already reaches 1.6e-15, so
-fixed-2 precision is not currently load-bearing); constants above pin it down
-if it becomes worth landing.
+The d₂-dispatch is now **landed** (threshold tuned to 1.75, giving dense worst
+δ = 0.228 and fixed-2 dense error 4.7e-11); see the closing section for the
+landing measurements and a variance-coordinate attempt at the ~0.23 corner floor.
 
 ## Accuracy notes
 
@@ -525,3 +526,81 @@ CDF-error criterion alone would suggest.
 julia --project=. test/runtests.jl                    # incl. the Temme testset
 julia --project=. bench/bench_gamma_simd.jl            # timing table above
 ```
+
+## d2-dispatch landing and variance-coordinate corner seeds (exp/bs-corner-seed)
+
+Two stages: (1) land the d2-validity seed dispatch measured earlier but left
+unlanded (a known win), (2) try to break the ~0.23 seed-error floor in the
+low-vol corner with variance (`w = v²`) coordinates. Numbers are on the dense
+`(delta, vol)` sweep of the earlier sections (delta ∈ [0.05, 0.95],
+vol ∈ [0.01, 2.0]), measured here on a 324k-point grid (600 × 540) with the
+worst points cross-checked on 144k / 233k / 454k grids; Apple M4, Julia 1.12.
+
+### Stage 1 — d2-validity dispatch (landed)
+
+`bs_seed` (and its branch-free twin `bs_seed_bf`) previously routed the deep tail
+with the `(κ, c*)` proxy filter `c* < 0.02128 ∧ κ > 0.5`. That filter *just
+misses* the dense worst point (κ ≈ 1.33, c* ≈ 0.0213, v ≈ 0.75): c* sits a hair
+above 0.02128, so the point stays on the P3 polynomial-CDF Newton step, whose
+argument |d2(v1)| ≈ 2.2 is far outside the odd-Taylor truncation radius — giving
+seed δ ≈ 0.34 and fixed-2 dense error 2.7e-8. The fix dispatches on the
+truncation variable itself: compute `d2` at the P1 seed, `d2(v1) = -κ/v1 - v1/2`,
+and route to the Mills seed whenever `|d2(v1)| > D2_VALID` (replacing the proxy
+filter entirely). This is a single lane-friendly compare, so `bs_seed_bf` mirrors
+it branch-free (`(abs(d2) <= D2_VALID) & (κ <= Κ4)` select).
+
+Threshold tuning on the 324k grid (worst seed δ over the whole sweep; corner δ
+restricted to vol < 0.4; fixed-2 dense max |Δv|):
+
+| D2_VALID | worst δ | corner δ | fixed-2 dense |
+|---------:|--------:|---------:|--------------:|
+| 1.70     | 0.243   | 0.236    | 9.1e-12       |
+| 1.72     | 0.238   | 0.211    | 1.8e-11       |
+| 1.74     | 0.232   | 0.213    | 3.5e-11       |
+| **1.75** | **0.228** | **0.216** | **4.7e-11** |
+| 1.76     | 0.226   | 0.219    | 6.1e-11       |
+| 1.78     | 0.225   | 0.225    | 1.0e-10       |
+| 1.80     | 0.231   | 0.231    | 1.7e-10       |
+
+The valley is flat and stable across grid resolutions (144k/233k/454k agree to
+±0.001 in δ and within ~10% in fixed-2). 1.80 reproduces the earlier report's
+δ = 0.231 exactly, but its fixed-2 (1.7e-10) sits *above* the 1e-10 target — the
+earlier "6.6e-11" was the nominal `δ¹⁶`; the measured error runs ~2.5× higher
+from the K4 constant at the low-vol worst point. **D2_VALID = 1.75 is landed**:
+it minimizes worst δ near its floor while keeping fixed-2 comfortably under 1e-10.
+
+Landed vs baseline (whole sweep):
+
+| metric                         | baseline | d2-dispatch (1.75) |
+|--------------------------------|---------:|-------------------:|
+| dense worst seed δ             | 0.344    | **0.228**          |
+| corner (vol < 0.4) worst δ     | 0.241    | **0.216**          |
+| fixed-2 dense max \|Δv\|       | 2.7e-8   | **4.7e-11** (~570×)|
+| fixed-3 dense max \|Δv\|       | 1.4e-15  | 1.7e-15            |
+| adaptive dense max \|Δv\|      | 1.7e-15  | 1.7e-15            |
+
+Soundness checks: the adaptive solver still converges everywhere it did before
+(dense max |Δv| 1.7e-15; deep-OTM delta ∈ [0.001, 0.999] max |Δv| 2.6e-14, so
+removing the proxy filter did not shrink any convergence basin); the SIMD batch
+stays bit-consistent with the scalar fixed kernel (max diff 1.8e-15 over all
+N ∈ {2,3}, W ∈ {2,4,8}, both seed strategies); all existing testsets pass, and a
+new `d2-validity seed dispatch` testset bounds the dense-subsample fixed-2 and
+seed δ.
+
+Timing (best-of-N, 1.64M-IV tiled grid, Apple M4). The dispatch routes more
+points to the two-`norminv` Mills seed (paper grid 28.7% → 43.0%; dense
+23.9% → 33.5%), which costs the scalar seed ~2 ns:
+
+| kernel                | baseline | d2-dispatch | Δ      |
+|-----------------------|---------:|------------:|--------|
+| scalar fixed-2        | ~53.9 ns | ~55.9 ns    | +3.7%  |
+| scalar fixed-3        | ~81.4 ns | ~83.4 ns    | +2.5%  |
+| SIMD W=8 fused f3     | 53.9 ns  | 53.3 ns     | ~0%    |
+| SIMD W=8 two-pass f3  | 45.6 ns  | 46.3 ns     | +1.5%  |
+
+The scalar fixed kernels take a ~3% hit (the extra Mills routing); the SIMD
+batch — the production fast path — is essentially neutral, because the fused
+kernel already evaluates every regime candidate (including the two `norminv_bf`)
+on every lane, so shifting the *selection* toward Mills changes nothing. This is
+the honest cost of the 570× fast-mode accuracy gain: it is not free on the
+scalar path, but it is free where it is used at scale.

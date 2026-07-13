@@ -59,12 +59,15 @@ end
     arg = min(cstar / max(ρ, 1e-300), 0.999999)
     zq = norminv_bf(arg)
     vdeep = zq + sqrt(zq * zq + 2.0 * κ)
-    # sanitize candidates, then select the regime (mirrors bs_seed's branches)
+    # sanitize candidates, then select the regime (mirrors bs_seed's branches);
+    # |d2(v1)| past D2_VALID leaves the polynomial surrogate's basin -> Mills seed
+    # (the lane-friendly replacement for the (κ, c*)-proxy tail filter).
     vpoly = sel(κ <= Κ2, v7, sel(κ <= Κ3, 0.5 * (v3 + v7), v3))
     vpoly = sel(isfinite(vpoly), vpoly, vatm)
     vdeep = sel(isfinite(vdeep), vdeep, vatm)
-    v = sel(κ < Κ1, vatm, sel(κ <= Κ4, max(vpoly, vatm), max(vdeep, vatm)))
-    return sel((cstar < CSTAR_TAIL) & (κ > KSTAR_TAIL), vdeep, v)   # tail override
+    use_poly = (abs(d2) <= D2_VALID) & (κ <= Κ4)
+    vsel = sel(use_poly, max(vpoly, vatm), max(vdeep, vatm))
+    return sel(κ < Κ1, vatm, vsel)
 end
 
 # one branch-free HH-4 update on a scalar or a Vec lane-bundle

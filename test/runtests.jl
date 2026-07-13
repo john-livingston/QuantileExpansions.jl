@@ -58,6 +58,23 @@ end
     @test (@allocated bs_implied_vol_fixed(0.1, 0.06, Val(2))) == 0
 end
 
+@testset "d2-validity seed dispatch (dense subsample)" begin
+    # The seed routes the mild-OTM band on |d2(v1)| > D2_VALID to the Mills seed
+    # (rather than the (κ, c*)-proxy tail filter). Off-node dense subsample:
+    # dense worst seed δ drops from ~0.34 to ~0.23 and fixed-2 from ~2.7e-8 to
+    # ~5e-11, so fixed-2 is a ~5e-11 fast mode across the whole 5-95 delta band.
+    e2 = 0.0; δmax = 0.0
+    for D in range(0.05, 0.95, length=120), v in range(0.01, 2.0, length=100)
+        k = v*(0.5v - sqrt(2)*erfinv(2D-1)); d1 = -k/v+0.5v; d2 = d1-v
+        c = normcdf(d1) - exp(k)*normcdf(d2)
+        e2 = max(e2, abs(bs_implied_vol_fixed(k, c, Val(2)) - v))
+        κ, cstar, E, _ = QuantileExpansions._otm_reduce(k, c)
+        δmax = max(δmax, abs(QuantileExpansions.bs_seed(κ, cstar, E) - v)/v)
+    end
+    @test e2 < 1e-10       # fast-mode dense bound (was ~2.7e-8 before the dispatch)
+    @test δmax < 0.25      # dense worst seed δ (the Stage-2 low-vol corner floor)
+end
+
 @testset "SIMD batch kernel" begin
     # vexp: branch-free exp within ~1 ulp of Base.exp
     me = 0.0
