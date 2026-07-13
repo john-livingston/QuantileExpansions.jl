@@ -147,6 +147,10 @@ Gamma(shape `a`, scale 1) quantile via the log-space regime-split solver
 @inline function gamma_quantile_log(a::Float64, u::Float64; tol::Float64 = 1e-14)
     u <= 0.0 && return 0.0
     u >= 1.0 && return Inf
+    # a >= a_min: fixed-order Temme CDF, ~1e-14 in the bulk and unbiased near
+    # x = a, where SpecialFunctions.gamma_inc (and thus the GammaLogQ residual
+    # and Distributions.quantile) carries a ~2e-6 defect. See RESULTS.md.
+    a >= GAMMA_SIMD_AMIN && return _gamma_temme_solve_lanes(GammaTemmeQ(a), u, Val(3))
     a == 1.0 && return -log1p(-u)
     if a == 0.5
         z = norminv(0.5 * (1.0 + u))
@@ -174,6 +178,9 @@ evaluation when the K4 error model certifies the first HH-4 update below τ."
 @inline function gamma_quantile_log_cert(a::Float64, u::Float64; tol::Float64 = 1e-14)
     u <= 0.0 && return 0.0
     u >= 1.0 && return Inf
+    # a >= a_min routes through the same Temme path as gamma_quantile_log (fixed
+    # 3 evals, no confirmation to skip), so the two stay bit-identical.
+    a >= GAMMA_SIMD_AMIN && return _gamma_temme_solve_lanes(GammaTemmeQ(a), u, Val(3))
     a == 1.0 && return -log1p(-u)
     if a == 0.5
         z = norminv(0.5 * (1.0 + u))
@@ -212,6 +219,15 @@ function gamma_quantile_batch!(out::Vector{Float64}, a::Float64, us::Vector{Floa
                 z = norminv(0.5 * (1.0 + u))
                 out[i] = 0.5 * z * z
             end
+        end
+        return out
+    elseif a >= GAMMA_SIMD_AMIN
+        # a >= a_min: same Temme path as the scalar functions (bit-identical),
+        # amortizing the per-shape GammaTemmeQ setup once.
+        DT = GammaTemmeQ(a)
+        @inbounds for i in eachindex(us)
+            u = us[i]
+            out[i] = u <= 0.0 ? 0.0 : (u >= 1.0 ? Inf : _gamma_temme_solve_lanes(DT, u, Val(3)))
         end
         return out
     end
