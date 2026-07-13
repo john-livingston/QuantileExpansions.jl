@@ -20,6 +20,7 @@ include("dists/inverse_gaussian.jl")
 include("dists/inverse_gaussian_simd.jl")
 include("dists/gamma.jl")
 include("dists/gamma_log.jl")
+include("dists/gamma_simd.jl")
 include("dists/beta.jl")
 include("dists/beta_logit.jl")
 
@@ -31,6 +32,6 @@ export normcdf, normpdf, norminv, normcdf_pdf, erfc_hi, erfcx_pos
 export BSCall, bs_implied_vol, bs_implied_vol_generic, bs_implied_vol_cert, bs_implied_vol_fixed, bs_implied_vol_grad, bs_price
 export bs_implied_vol_fixed_batch!, bs_implied_vol_fixed_batch_threaded!, BSFixedWorkspace, vexp, vlog
 # other distributions
-export IGQ, ig_quantile, ig_quantile_cert, ig_quantile_batch!, ig_quantile_batch_threaded!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, gamma_quantile_batch!, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert, beta_quantile_batch!
+export IGQ, ig_quantile, ig_quantile_cert, ig_quantile_batch!, ig_quantile_batch_threaded!, GammaQ, gamma_quantile, GammaLogQ, gamma_quantile_log, gamma_quantile_log_cert, gamma_quantile_batch!, GammaTemmeQ, gamma_quantile_batch_simd!, gamma_quantile_batch_simd_threaded!, GAMMA_SIMD_AMIN, BetaQ, beta_quantile, BetaLogitQ, beta_quantile_logit, beta_quantile_logit_cert, beta_quantile_batch!
 
 end # module
