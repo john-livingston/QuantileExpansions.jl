@@ -655,14 +655,14 @@ two-pass strategy wins — the API picks per ISA).</p>
 <td style="text-align: right;">129.8 ns</td>
 <td style="text-align: right;">269.9 ns</td>
 <td style="text-align: right;">2.1×</td>
-<td>certified central: 126 ns</td>
+<td>SIMD (a≥20): ~60 ns; fast mode: ~6 ns</td>
 </tr>
 <tr>
 <td>Beta (logit-space)</td>
 <td style="text-align: right;">302.7 ns</td>
 <td style="text-align: right;">821.1 ns</td>
 <td style="text-align: right;">2.7×</td>
-<td>CF5 seed + amortized batch</td>
+<td>ODE5 certified: 139 to 211 ns (n≤33); seed: ~15 ns</td>
 </tr>
 </tbody>
 </table>
