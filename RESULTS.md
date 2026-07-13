@@ -798,3 +798,110 @@ Land-worthy as the beta central accelerator, with the headline reframed honestly
 
 Reproduce: `julia --project=. test/runtests.jl` (testset "Beta ODE5 central seed
 + y6 certificate"); `julia --project=. -O3 bench/bench_beta_ode5.jl`.
+
+## Gamma large-a ODE5 seed and certified seed-only regions (exp/gamma-ode5)
+
+Port of the "semianalytic" mode of A. Hekimoglu's combined engine
+(`gamma_quant_final_combined_engine.c`, `gamma_quant_semianalytic_one`). The
+full solver `gamma_quantile_log` spends almost all of its ~90-130 ns/q inside
+the incomplete-gamma CDF that `hh_terms` evaluates. This mode asks a different
+question: in which parts of the (a, u) plane is a closed-form regime seed
+already accurate enough to return with ZERO incomplete-gamma evaluations? That
+is the unlock, because the seed is just `norminv` plus a polynomial.
+
+`gamma_quantile_fast(a, u)` and the amortized `gamma_quantile_fast_batch!`
+(new, `src/dists/gamma_fast.jl`) dispatch a region map:
+
+- **seed-only** (0 CDF evals): a >= 10 central band (|z| <= 2.5) returns the
+  CF5/ODE5 seed `_gamma_seed_cf5`; a < 2 lower tail returns the order-3 series
+  seed `_gamma_seed_lower`.
+- **one-update** (1 CDF eval): 2 <= a < 10 central/upper and a >= 10 moderate
+  tail get the seed plus one log-HH4 step (bit-identical to the exact solver's
+  first iterate); 2 <= a < 10 lower tail (u < 0.08) gets series seed + one step.
+- **two-update** (2 CDF evals): a < 2 mid-u transition, series seed + two
+  log-Newton steps.
+- **fallback**: deep upper (q <= 1e-5) hands back to `exp(solve(GammaLogQ))`,
+  bit-for-bit the exact path (verified: max abs diff 0.0 over the fallback
+  region across a in {2,5,10,25,50,100}).
+
+Two deliberate deviations from the C, both accuracy-improving: the lower seed is
+the repo's order-3 reversion (C uses order 2), and the deep-upper is the exact
+solver rather than C's approximate Mills/log-survival Newton.
+
+### Accuracy (measured, max |Δ ln x| vs `Distributions.quantile`)
+
+Seed-only central band (|z| <= 2.5), the headline region:
+
+| a    | 10     | 25     | 50     | 100    | 250    | 500    | 1000   | 5000    |
+|------|-------:|-------:|-------:|-------:|-------:|-------:|-------:|--------:|
+| err  | 1.2e-5 | 2.8e-6 | 7.4e-7 | 2.0e-7 | 3.7e-8 | 1.1e-8 | 3.7e-9 | 4.4e-10 |
+
+This is NOT machine precision, and it does not become machine precision at any
+practical shape. The error is the truncation of the 5th-order Cornish-Fisher
+seed and scales as a clean power law:
+
+```
+err_central(a) ~= 1.04e-3 * a^-1.85       (fit over a in [25, 500])
+```
+
+so the smallest shape for which the seed-only central region is genuinely
+certified below a tolerance tau is:
+
+| tau        | 1e-4 | 1e-6 | 1e-8 | 1e-10 | 1e-13   |
+|------------|-----:|-----:|-----:|------:|--------:|
+| min a      |  3.5 |   43 |  514 |  6190 | 259000  |
+
+A certified-to-1e-13 seed-only gamma quantile therefore requires a ~ 2.6e5:
+empty for any realistic shape. Seed-only is a pricing/QMC-tolerance mode, not a
+machine-precision unlock, exactly as the reference engine's own header states.
+
+One-update region: machine precision (~1e-14) for a >= 25; for small shapes a
+single step from a poor extreme-tail seed leaves ~2.6e-6 (a=2), ~2.3e-7 (a=5),
+~6.6e-7 (a=10) at the tail edges (u -> 1e-6 or the q = 1e-5 fallback boundary).
+
+### Coverage
+
+For a >= 10 the seed-only central band is 98.8% of u in [1e-8, 1-1e-8] (the
+|z| <= 2.5 interval u in [0.0062, 0.9938]); the remaining 1.2% is one-update.
+For a in [2, 10) there is no seed-only region (all one-update); for a < 2 only
+the lower tail (u < 0.15 at 0.5 < a < 2) is seed-only. Over a 10-shape by dense-u
+sweep the overall seed-only fraction is 0.79.
+
+### Benchmark (a=50, 16384 u-points, min time / N, single thread, -O3)
+
+| kernel                                   | ns/q  |
+|------------------------------------------|------:|
+| norminv only (floor)                     |   1.3 |
+| CF5 seed = norminv + polynomial          |   5.7 |
+| **fast seed-only region (a=50)**         |   **6.2** |
+| fast one-update region (a=5)             |  54.5 |
+| fast mixed full range (a=50)             |   7.2 |
+| full certified solve, central (a=50)     |  86.8 |
+| full certified solve, full range (a=50)  |  89.0 |
+| full solve (uncertified), central (a=50) | 149.1 |
+
+Seed-only lands at 6.2 ns/q, within 9% of the bare `norminv` + polynomial floor
+and **14x faster** than the full certified path (86.8 ns/q). Because the central
+band is 98.8% of u, the mixed full-range fast batch is 7.2 ns/q, **12x** the
+full path, with the residual cost coming from the ~1.2% one-update tail points at
+~54 ns each. The batch is allocation-free (0 bytes). The one-update region alone
+(54.5 ns/q) is dominated by its single incomplete-gamma call and only ~1.6x
+faster than the full path, so it is not the win.
+
+### Verdict
+
+**Land-worthy as an explicitly-labeled fast/approximate mode; not a replacement
+for `gamma_quantile_log`.** The seed-only large-a central region is a real 14x
+speedup that reaches the cost of `norminv` plus a polynomial, and it is the
+right tool wherever ~1e-6 to 1e-8 relative accuracy suffices (Monte Carlo / QMC
+inverse-transform sampling, option pricing), which is exactly the tolerance
+band where a >= 43 already certifies below 1e-6. The honest negative result is
+the machine-precision framing: no seed-only region is certifiable to 1e-13 for
+any practical shape (a ~ 2.6e5 required), and the one-update regions overlap the
+existing `solve_certified` cost while sacrificing tail accuracy at small a, so
+they add little over the certified full solver. The value is entirely in the
+zero-CDF-eval seed-only path, gated to the shapes and tolerances where it is
+provably good.
+
+Reproduce: `julia --project=. -O3 bench/bench_gamma_ode5.jl` and the
+`Gamma fast semi-analytic (ODE5 seed-only)` testset in `test/runtests.jl`.
