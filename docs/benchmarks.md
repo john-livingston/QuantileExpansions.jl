@@ -34,8 +34,8 @@ two-pass strategy wins — the API picks per ISA).
 |---|---:|---:|---:|---|
 | BS-IV | 69.1 ns | C: 113.7 ns | 1.65× | + SIMD/threads above |
 | Inverse Gaussian | 76.2 ns | 574.9 ns | 7.55× | SIMD batch: 37 ns; threaded: 4.4 ns |
-| Gamma (log-space) | 129.8 ns | 269.9 ns | 2.1× | certified central: 126 ns |
-| Beta (logit-space) | 302.7 ns | 821.1 ns | 2.7× | CF5 seed + amortized batch |
+| Gamma (log-space) | 129.8 ns | 269.9 ns | 2.1× | SIMD (a≥20): ~60 ns; fast mode: ~6 ns |
+| Beta (logit-space) | 302.7 ns | 821.1 ns | 2.7× | ODE5 certified: 139 to 211 ns (n≤33); seed: ~15 ns |
 
 Gamma/beta cost is dominated by the incomplete-gamma/-beta CDF inside the
 residual; the win comes from needing only ~2.5–3 CDF evaluations per quantile.
