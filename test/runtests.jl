@@ -160,6 +160,49 @@ end
     @test (@allocated beta_quantile_batch!(out, 2.0, 5.0, ps)) == 0
 end
 
+@testset "SIMD gamma via fixed-length Temme CDF" begin
+    import SpecialFunctions: loggamma
+    setprecision(BigFloat, 300)
+    # BigFloat reference P(a,x) via the confluent (lower incomplete gamma) series.
+    # SpecialFunctions.gamma_inc itself is only ~2e-6 accurate near x=a for large a
+    # (localized transition-region defect), so it cannot be the accuracy reference
+    # here; the kernel is in fact far more accurate than gamma_inc there.
+    Pbig(a, x) = begin
+        term = one(BigFloat); s = one(BigFloat); n = 0
+        while true
+            n += 1; term *= x/(a+n); s += x == 0 ? zero(BigFloat) : term
+            (term < s*BigFloat(2)^-280 || n > 100000) && break
+        end
+        exp(a*log(x) - x - loggamma(a+1))*s
+    end
+    us = collect(range(1e-6, 1 - 1e-6, length=777))
+    out = similar(us)
+    # accuracy: absolute forward CDF residual vs BigFloat truth (avoids the u-near-0/1
+    # representation amplification of the |Delta ln x| metric)
+    for a in (20.0, 50.0, 100.0, 500.0), N in (2, 3), W in (2, 4, 8)
+        gamma_quantile_batch_simd!(out, a, us, Val(N), Val(W))
+        mf = maximum(Float64(abs(Pbig(BigFloat(a), BigFloat(out[i])) - us[i])) for i in eachindex(us))
+        @test mf < 1e-12
+    end
+    # lanes are bit-identical across W (no lane divergence)
+    o2 = similar(us); o4 = similar(us); o8 = similar(us)
+    gamma_quantile_batch_simd!(o2, 50.0, us, Val(3), Val(2))
+    gamma_quantile_batch_simd!(o4, 50.0, us, Val(3), Val(4))
+    gamma_quantile_batch_simd!(o8, 50.0, us, Val(3), Val(8))
+    @test o2 == o4 == o8
+    # allocation-free given preallocated out
+    @test (@allocated gamma_quantile_batch_simd!(out, 50.0, us, Val(3), Val(4))) == 0
+    # threaded == serial (disjoint chunks)
+    ot = similar(us)
+    gamma_quantile_batch_simd_threaded!(ot, 50.0, us, Val(3), Val(4))
+    @test ot == o4
+    # a < a_min delegates to the scalar amortized batch, bit-for-bit
+    osc = similar(us)
+    gamma_quantile_batch_simd!(out, 5.0, us, Val(3), Val(4))
+    gamma_quantile_batch!(osc, 5.0, us)
+    @test out == osc
+end
+
 @testset "Beta vs Distributions (forward residual)" begin
     mf = 0.0
     for a in [0.5,1.0,2.0,5.0,20.0], b in [0.5,1.0,2.0,5.0,20.0], p in [1e-3,0.01,0.1,0.5,0.9,0.99,0.999]
