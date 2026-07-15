@@ -916,3 +916,123 @@ provably good.
 
 Reproduce: `julia --project=. -O3 bench/bench_gamma_ode5.jl` and the
 `Gamma fast semi-analytic (ODE5 seed-only)` testset in `test/runtests.jl`.
+
+## Two-factor CIR sum: closed-form series vs COS inversion (negative result)
+
+The paper by Yilmaz and Hekimoglu (arXiv:2510.27081) gives a closed-form series
+transition density and CDF for `S = a1*X(1) + a2*X(2)`, a weighted sum of two
+independent CIR increments (each a scaled noncentral chi-square). We asked whether
+`S` is worth adding as a target and, specifically, whether the paper's
+double-Poisson-mixture series beats the honest baseline the paper never runs: a
+Fang-Oosterlee COS inversion of the (trivial, closed-form) characteristic function.
+
+The series was implemented and validated first (density integrates to 1 to
+`< 1e-10`, reduces to a scaled `NoncentralChisq` in the equal-scale limit to
+`< 1e-11`, CDF matches an independent quadrature to `< 1e-9`). Two corrections came
+out of this: the density's `1F1` argument sign (a sign typo in the paper), and the
+CDF sign convention. The CDF coefficient is the signed `(-δ)^k`, `δ = β2/β1 - 1`;
+`+δ^k` fails for both signs. The paper proof's `(-|δ|)^k` is wrong for `δ < 0` (it
+equals the correct form for `δ > 0`), which is the opposite of what an earlier note
+claimed. This is now a regression test.
+
+The decision comes down to the series CDF versus COS, truth from a BigFloat
+k-series or BigFloat COS reference (cross-checked where both are feasible). Panel at
+`β1/β2 = 2`:
+
+| Δt      | series terms | series err | series ns | COS N | COS err | COS ns | series/COS |
+|---------|-------------:|-----------:|----------:|------:|--------:|-------:|-----------:|
+| 1.0     |          128 |   2.2e-16  |  1.12 ms  |  2048 | 8.7e-11 | 7.8 us |      145x  |
+| 0.25    |          507 |   1.0e-15  |  2.30 ms  |   256 | 1.0e-11 | 2.0 us |     1151x  |
+| 0.05    |         2520 |   1.7e-14  |   374 ms  |    64 | 1.1e-15 | 1.2 us |   317927x  |
+| 1/52    |         6438 |   6.0e-14  |   509 ms  |    64 | 5.6e-16 | 527 ns |   965380x  |
+| 1/252   |        34354 |   5.0e-10  |  2.63 s   |    64 | 1.7e-14 | 456 ns |  5.77e6 x  |
+| 1/2520  |       350140 |   1.8e-12  |  26.8 s   |    64 | 1.3e-13 | 257 ns |  1.04e8 x  |
+
+The series term count is the product of the two Poisson-truncation windows and
+grows as `O(1/Δt^2)` (each term also needs its own incomplete-gamma base call); the
+COS term count `N` *decreases* as `Δt` shrinks because the density becomes smooth
+and near-Gaussian. So the two methods diverge in opposite directions and there is
+no crossover: COS wins on speed at every `Δt`, from 145x (large `Δt`, where the
+`s^(a0-1)` non-smoothness at 0 forces `N ~ 2048`) to 1e8x (small `Δt`). It also wins
+on accuracy: the series degrades to `5e-10` at small-to-mid `Δt` where COS is at
+machine precision. Even the best un-implemented series optimization (share the
+incomplete gamma across terms with equal `n1+n2`, an `O(w1+w2)` versus `O(w1*w2)`
+win of about 5x to 10x) leaves the series slower at every `Δt`.
+
+The quantile itself is inversion-trivial (smooth, unimodal): a Cornish-Fisher
+order-5 seed from the closed-form cumulants plus Newton on the COS CDF converges in
+2 to 5 steps (the seed improves as `Δt` shrinks, reaching `4.4e-7` relative at
+`Δt = 1/252`), roughly 4 us to 200 us per quantile. The regime-split HH-4 machinery
+adds nothing here: the CIR-sum log-density is a mixture, not rational, so higher
+derivatives are not free, and the CDF (via COS) is already cheap.
+
+### Verdict
+
+**No-go on the paper's closed-form series.** It is dominated by COS inversion on
+both speed and accuracy across the whole practically-relevant range; the paper
+never ran this comparison. If `S` is ever wanted as a first-class target, add it as
+a COS problem (COS-CDF + Newton from the CF5 seed), not through the regime-split
+interface. Reusable byproducts, all validated: all-order closed-form cumulants
+(the paper gives only the first two), the exact characteristic function, an
+allocation-free COS kernel, and the CF5 seed. The generic COS kernel is lifted into
+`test/cos_oracle.jl` as a validation oracle for any future target with a known
+characteristic function. The dead-end series code was not landed, so there is no
+`main` reproduction path; this section is the record of the finding.
+
+## Noncentral chi-square marginal quantile (exp/ncx2)
+
+The single CIR increment is a scaled noncentral chi-square `X = c*χ²(d, λ)`, on the
+METHOD.md list of targets to add. It looks like it should slot in like the others
+but does not: its log-density derivative carries a modified-Bessel ratio
+`R(z) = I_{d/2}(z)/I_{d/2-1}(z)`, so it is NOT rational and the "rational
+log-derivative gives near-free HH-4" property that holds for BS/IG/gamma/beta
+breaks. Obtaining `f''/f'` and `f'''/f'` needs a dedicated Bessel branch of about
+669 ns per step (38% of one Marcum-Q CDF evaluation, or 9.7x a pdf). The only piece
+that survives is the derivative *recursion*: once `R` is known, all higher `R`
+derivatives are free via the Riccati identity `R' = 1 - R^2 - ((2ν+1)/z) R`, so it
+is one Bessel-ratio evaluation per iterate, not per derivative order. (An initial
+derivation had the `1/y` coefficient off by 2x; the correct log-derivative is
+`M'(y) = -1/2 + (d/2-1)/y + (√λ/(2√y))*R`, verified to ~2e-14 against a BigFloat
+Poisson-mixture ground truth.)
+
+A Sankaran cube-root seed (full-grid median relative error `9.8e-4`, about 8x
+better than Patnaik's `8.4e-3`) plus a bracket-safeguarded polish reaches `< 1e-9`
+relative across a 252-cell `(d, λ, u)` grid (all 504 combos x 2 methods pass;
+median `1.9e-14`). Iteration counts to relative-x `1e-13`, in-basin: Sankaran +
+Newton 4.92, Sankaran + HH-4 3.47 (about 29% fewer). Both seeds are catastrophic in
+the deep left tail (small df, moderate λ, a steep `j=0`-Poisson power law), rescued
+only by the bisection safeguard. Speed (ns/quantile, allocation-free):
+
+| (d, λ, u)         | seed | seed+Newton | seed+HH-4 | Distributions | speedup |
+|-------------------|-----:|------------:|----------:|--------------:|--------:|
+| (2.35, 1, 0.9)    |   18 |        3917 |      3599 |         41666 |  10.6x  |
+| (5, 10, 0.5)      |   18 |        5347 |      4339 |         83834 |  15.7x  |
+| (20, 100, 0.3)    |   18 |        1404 |      1246 |         10417 |   7.4x  |
+| (100, 1000, 0.999)|   27 |       10625 |      3889 |         46958 |   4.4x  |
+
+Both polishers beat `Distributions.quantile(NoncentralChisq)` (a generic bracketing
+root find over the Marcum-Q CDF) by 4x to 16x. HH-4 is faster in wall-clock than
+Newton, not just in iteration count, because the ~1.7 us Marcum-Q residual
+dominates every step, so saving CDF evaluations outweighs the added Bessel cost.
+Per-step cost breakdown (d=5, λ=10): Marcum-Q cdf residual 1738 ns (dominates),
+pdf 69 ns, analytic Bessel branch (φ2, ξ) 669 ns, Sankaran seed 18 ns.
+
+### Verdict
+
+**Land-worthy, with a dedicated Bessel branch.** Unlike the CIR-sum series, the
+noncentral chi-square marginal earns a fast quantile (4x to 16x over
+Distributions). But it sits outside the clean rational-log-derivative family that
+motivated HH-4, so the "rational log-derivative" property should not be advertised
+as universal once this target is present.
+
+A follow-up to share Bessel work is scoped but deliberately deferred: the Marcum-Q
+residual is a Bessel *series*, not the single `I_ν(√(λx))` the pdf and ratio `R`
+use, so the ~1.7 us residual and the ~669 ns derivative cannot share cleanly. The
+only clean fusion (pdf + derivative from the same two `besselix` calls) saves about
+3% of a step; a full shared Poisson-mixture rewrite would fold in the cdf too but is
+`O(λ)` terms (about 1000 at λ=1000) and likely slower than Marcum-Q at large λ, so
+its payoff is uncertain. Worth doing only if profiling flags the pdf, or if a
+faster stand-alone Marcum-Q is independently wanted.
+
+Reproduce: `julia --project=. -O3 bench/bench_ncx2.jl` and the
+`ncx2_quantile vs Distributions` testset in `test/runtests.jl`.

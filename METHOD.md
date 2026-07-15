@@ -147,7 +147,7 @@ Recommended split: **keep the C kernel as the deployable artifact**; use Julia a
 - **Alternative coordinates:** Schadner (arXiv:2604.24480) recasts BS-IV as an inverse-Gaussian quantile in variance space — directly relevant to the IG work; compare whether his transform simplifies any regime.
 - **Codegen the C from the Julia spec:** if the generic Julia solver is the single source of truth, emit the per-distribution C kernel from it (metaprogramming).
 - **Benchmark against existing libraries:** Boost, Cephes, R `qgamma`/`qbeta`, Distributions.jl — establish where the expansion approach actually wins.
-- **Extend the family:** noncentral chi-square, Student-t, and other distributions whose CDF shares the "$\Phi$ + weighted $\Phi$" or "rational log-density" structure.
+- **Extend the family:** Student-t and other distributions whose CDF shares the "$\Phi$ + weighted $\Phi$" or "rational log-density" structure. Noncentral chi-square was explored (see the noncentral chi-square marginal section of RESULTS.md) and does NOT fit: its log-density carries a modified-Bessel ratio, not a rational function, so it needs a dedicated Bessel branch rather than the near-free HH-4 path (still a 4x to 16x win over Distributions, just not through this mechanism).
 
 ---
 
