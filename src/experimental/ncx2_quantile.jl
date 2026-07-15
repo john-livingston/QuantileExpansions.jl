@@ -173,16 +173,20 @@ function quantile_hh4(D::NoncentralChisq, d::Float64, λ::Float64, u::Float64, x
         abs(r) < floor_r && break
         (lo > 0.0 && hi < Inf && (hi - lo) <= xtol * hi) && break   # bracket pinned
         fp = pdf(D, x)
-        ρ = fp > 0.0 ? r / fp : 0.0
-        abs(ρ) <= xtol * max(x, 1e-300) && break           # relative-x converged
-        φ2, ξ = bessel_logderivs(d, λ, x)                  # THE Bessel branch
-        denom = -6.0 + ρ * (6.0 * φ2 - ρ * ξ)
-        xn = abs(denom) < 1e-20 ? x - ρ : x + 3.0 * ρ * (2.0 - ρ * φ2) / denom
-        if !(isfinite(xn) && xn > lo && xn < hi)
-            xn = fp > 0.0 ? x - ρ : NaN                    # Newton safeguard
+        if fp > 0.0
+            ρ = r / fp
+            abs(ρ) <= xtol * max(x, 1e-300) && break       # relative-x converged
+            φ2, ξ = bessel_logderivs(d, λ, x)              # THE Bessel branch
+            denom = -6.0 + ρ * (6.0 * φ2 - ρ * ξ)
+            xn = abs(denom) < 1e-20 ? x - ρ : x + 3.0 * ρ * (2.0 - ρ * φ2) / denom
             if !(isfinite(xn) && xn > lo && xn < hi)
-                xn = hi == Inf ? 2.0 * x : 0.5 * (lo + hi)
+                xn = x - ρ                                 # Newton safeguard
             end
+        else
+            xn = NaN                                       # no derivative info; use bracket
+        end
+        if !(isfinite(xn) && xn > lo && xn < hi)
+            xn = hi == Inf ? 2.0 * x : 0.5 * (lo + hi)
         end
         x = xn
     end
@@ -196,12 +200,20 @@ end
 function ncx2_quantile(d::Float64, λ::Float64, u::Float64; c::Float64 = 1.0,
                        seed::Symbol = :sankaran, method::Symbol = :newton,
                        xtol::Float64 = 1e-13)
-    x0 = seed === :patnaik ? patnaik_seed(d, λ, u) : sankaran_seed(d, λ, u)
+    if seed === :patnaik
+        x0 = patnaik_seed(d, λ, u)
+    elseif seed === :sankaran
+        x0 = sankaran_seed(d, λ, u)
+    else
+        throw(ArgumentError("seed must be :sankaran or :patnaik"))
+    end
     D  = NoncentralChisq(d, λ)
     if method === :hh4
         x, _ = quantile_hh4(D, d, λ, u, x0; xtol = xtol)
-    else
+    elseif method === :newton
         x, _ = quantile_newton(D, u, x0; xtol = xtol)
+    else
+        throw(ArgumentError("method must be :newton or :hh4"))
     end
     return c * x
 end

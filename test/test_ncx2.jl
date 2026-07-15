@@ -10,6 +10,10 @@ using .NCX2Quantile
 const DS = (0.5, 1.0, 2.35, 5.0, 20.0, 100.0)
 const LS = (0.0, 0.1, 1.0, 10.0, 100.0, 1000.0)
 const US = (1e-6, 1e-3, 0.1, 0.5, 0.9, 0.999, 1 - 1e-6)
+# 1e-9 is deliberately loose: the reference is Distributions.quantile, whose
+# Marcum-Q inversion loses precision in the deep tails, so a tighter bound (or a
+# denser tail grid) could fail on the reference's error, not ours. For true tail
+# ground truth use the COS oracle or a BigFloat Poisson-mixture (see RESULTS.md).
 const RELTOL = 1e-9
 const SCALE = 2.5   # arbitrary c > 0 to exercise the scaling X = c·χ²
 
@@ -43,6 +47,15 @@ failures = Tuple{Float64,Float64,Float64,Symbol,Float64,Float64}[]
             @test rel < RELTOL
         end
     end
+end
+
+
+@testset "ncx2_quantile guards" begin
+    D = NoncentralChisq(5.0, 10.0)
+    q, _ = quantile_hh4(D, 5.0, 10.0, 0.5, 2000.0)
+    @test abs(cdf(D, q) - 0.5) < 1e-12
+    @test_throws ArgumentError ncx2_quantile(5.0, 10.0, 0.5; seed = :bad)
+    @test_throws ArgumentError ncx2_quantile(5.0, 10.0, 0.5; method = :bad)
 end
 
 @printf("\nGrid: %d (d,λ,u) combos × 2 methods; pass=%d fail=%d skip=%d\n",
