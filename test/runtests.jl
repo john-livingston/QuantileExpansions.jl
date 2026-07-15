@@ -397,3 +397,37 @@ end
     @test (@allocated bs_implied_vol(0.1, 0.06)) == 0
     @test (@allocated ig_quantile(1.0, 3.0, 0.7)) == 0
 end
+
+# Experimental (not part of the package module): scaled noncentral chi-square
+# quantile (exp/ncx2). Its 504-case grid check vs Distributions runs here so the
+# kept experiment does not bit-rot.
+include("test_ncx2.jl")
+
+# Generic COS validation oracle (test/cos_oracle.jl): a characteristic-function
+# cross-check for any target with a known CF. Self-checked against Normal
+# (spectral) and Gamma (skewed), whose CFs and cumulants are closed form.
+include("cos_oracle.jl")
+using .COSOracle
+@testset "COS validation oracle" begin
+    # Normal(μ,σ): φ(ξ)=exp(iμξ - σ²ξ²/2); smooth density => spectral accuracy
+    μ, σ = 0.3, 1.4
+    plN = cos_oracle_plan(ξ -> exp(im*μ*ξ - 0.5σ^2*ξ^2), μ, σ^2, 0.0, 0.0; N=512, L=10.0)
+    DN = Distributions.Normal(μ, σ)
+    eF = 0.0; ef = 0.0
+    for x in range(μ - 4σ, μ + 4σ, length=60)
+        eF = max(eF, abs(oracle_cdf(plN, x) - Distributions.cdf(DN, x)))
+        ef = max(ef, abs(oracle_pdf(plN, x) - Distributions.pdf(DN, x)))
+    end
+    @test eF < 1e-14
+    @test ef < 1e-14
+    # Gamma(a,θ): φ(ξ)=(1 - iθξ)^{-a}; κ_r = a(r-1)!θ^r. Skewed; smooth for a>=2.
+    a, θ = 5.0, 0.7
+    plG = cos_oracle_plan(ξ -> (1 - im*θ*ξ)^(-a), a*θ, a*θ^2, 2a*θ^3, 6a*θ^4; N=4096, L=10.0)
+    DG = Distributions.Gamma(a, θ)
+    m, s = a*θ, sqrt(a*θ^2)
+    eFG = 0.0
+    for x in range(max(m - 3s, 1e-6), m + 6s, length=80)
+        eFG = max(eFG, abs(oracle_cdf(plG, x) - Distributions.cdf(DG, x)))
+    end
+    @test eFG < 1e-11
+end
