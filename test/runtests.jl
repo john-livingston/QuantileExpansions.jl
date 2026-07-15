@@ -1,5 +1,4 @@
-include("../src/QuantileExpansions.jl")
-using .QuantileExpansions
+using QuantileExpansions
 using Test
 import Distributions
 import SpecialFunctions: erfinv, gamma_inc, beta_inc

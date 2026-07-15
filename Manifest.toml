@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "69c85393a6e8ea8a7b80c877d0ce287663e9d7fd"
+project_hash = "85de07052dee35f2b1471710850bf9c14153970c"
 
 [[deps.Accessors]]
 deps = ["CompositionsBase", "ConstructionBase", "Dates", "InverseFunctions", "MacroTools"]
@@ -302,6 +302,12 @@ version = "2.11.3"
 
     [deps.QuadGK.weakdeps]
     Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+
+[[deps.QuantileExpansions]]
+deps = ["BenchmarkTools", "Distributions", "SIMD", "SpecialFunctions"]
+path = "."
+uuid = "cfa04a7c-c482-463f-b5a6-4d289a1b6722"
+version = "0.1.0"
 
 [[deps.Random]]
 deps = ["SHA"]
