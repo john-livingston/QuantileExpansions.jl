@@ -48,8 +48,10 @@ max error, single-threaded. See [`RESULTS.md`](RESULTS.md) for the full writeup.
 
 ## Quick start
 
+Not yet registered: clone, then start `julia --project=.` from the repo root.
+
 ```julia
-include("src/QuantileExpansions.jl"); using .QuantileExpansions
+using QuantileExpansions
 
 bs_implied_vol(0.1, 0.06)              # Black–Scholes implied total vol from (log-moneyness, price)
 bs_implied_vol_fixed(0.1, 0.06, Val(2))  # branch-free fast mode (~5e-11 in the 5–95 delta band)
@@ -61,7 +63,7 @@ beta_quantile_logit(2.0, 5.0, 0.4)     # Beta quantile (a, b, p)
 Run the tests and the full benchmark table:
 
 ```
-julia --project=. test/runtests.jl               # correctness (all four distributions)
+julia --project=. -e 'using Pkg; Pkg.test()'  # correctness (all four distributions)
 julia --project=. -O3 -t auto bench/run_all.jl    # the results table above
 ```
 

@@ -59,7 +59,7 @@ formulations with density-scaled stopping are the recommended paths.
 ## Reproducing
 
 ```bash
-julia --project=. test/runtests.jl            # correctness, 17 testsets
+julia --project=. -e 'using Pkg; Pkg.test()'  # correctness, 25 testsets
 julia --project=. -O3 -t auto bench/run_all.jl
 julia --project=. -O3 bench/bench_simd.jl     # prints host CPU + SIMD table
 bash ref/fetch.sh                             # fetch the C reference (not vendored)

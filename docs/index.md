@@ -33,10 +33,10 @@ Measured on Apple Silicon (details and cross-ISA numbers in
 
 ## Quick start
 
-The package is not yet registered — clone and use directly:
+The package is not yet registered. Clone and use with the project environment:
 
 ```julia
-include("src/QuantileExpansions.jl"); using .QuantileExpansions
+using QuantileExpansions
 
 bs_implied_vol(0.1, 0.06)          # implied total vol from (log-moneyness, price)
 ig_quantile(1.0, 3.0, 0.7)         # Inverse Gaussian quantile (μ, λ, p)
